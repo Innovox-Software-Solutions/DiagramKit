@@ -1,16 +1,50 @@
-import { Shape, Point, ResizeHandle, BoundingBox } from "@/types/shape";
+import { Shape, Point, ResizeHandle, BoundingBox, ConnectionPoint, StrokeStyle } from "@/types/shape";
 
 export const HANDLE_SIZE = 8;
 export const HIT_TOLERANCE = 5;
+
+let measureCtx: CanvasRenderingContext2D | null = null;
+const getMeasureCtx = () => {
+    if (!measureCtx && typeof document !== 'undefined') {
+        const canvas = document.createElement('canvas');
+        measureCtx = canvas.getContext('2d');
+    }
+    return measureCtx;
+};
+
+export const measureText = (text: string, fontSize: number): { width: number, height: number } => {
+    const ctx = getMeasureCtx();
+    if (ctx) {
+        ctx.save();
+        ctx.font = `${fontSize}px sans-serif`;
+        const metrics = ctx.measureText(text);
+        ctx.restore();
+        return {
+            width: metrics.width,
+            height: fontSize * 1.2 // approximate line height
+        };
+    }
+    return { width: 100, height: fontSize * 1.2 };
+};
+
+const getPencilAbsolutePoints = (shape: Shape): Point[] => {
+    if (!shape.points || shape.points.length === 0) return [];
+    return shape.points.map((point) => ({
+        x: shape.x + point.x,
+        y: shape.y + point.y,
+    }));
+};
+
 
 // Render shapes on the canvas
 export const renderShapes = (
     ctx: CanvasRenderingContext2D,
     shapes: Shape[],
-    selectedShapeId: string | null,
+    selectedShapeIds: string[],
     scale: number,
     panX: number,
-    panY: number
+    panY: number,
+    imageCache?: Map<string, HTMLImageElement>
 ) => {
     ctx.save();
     ctx.translate(panX, panY);
@@ -20,13 +54,21 @@ export const renderShapes = (
         ctx.save();
         ctx.strokeStyle = shape.strokeColor;
         ctx.fillStyle = shape.fillColor !== "transparent" ? shape.fillColor : "rgba(0,0,0,0)";
-        ctx.lineWidth = 2; // Fixed stroke width for simplicity, could be dynamic
+        const strokeStyle: StrokeStyle = shape.strokeStyle || "solid";
+        ctx.lineWidth = shape.strokeWidth ?? 2;
+        if (strokeStyle === "dashed") {
+            ctx.setLineDash([10, 6]);
+        } else if (strokeStyle === "dotted") {
+            ctx.setLineDash([2, 5]);
+        } else {
+            ctx.setLineDash([]);
+        }
         ctx.lineJoin = "round";
         ctx.lineCap = "round";
 
         ctx.beginPath();
 
-        switch (shape.type) {
+            switch (shape.type) {
             case "rectangle":
                 ctx.rect(shape.x, shape.y, shape.width, shape.height);
                 if (shape.fillColor !== "transparent") ctx.fill();
@@ -56,27 +98,152 @@ export const renderShapes = (
                 break;
 
             case "arrow":
-                drawArrow(ctx, shape.x, shape.y, shape.x + shape.width, shape.y + shape.height);
+                let fromX = shape.x;
+                let fromY = shape.y;
+                let toX = shape.x + shape.width;
+                let toY = shape.y + shape.height;
+
+                // If it's a smart arrow, try to resolve the anchors dynamically
+                if (shape.startShapeId || shape.endShapeId) {
+                    if (shape.startShapeId && shape.startAnchor) {
+                        const startShape = shapes.find(s => s.id === shape.startShapeId);
+                        if (startShape) {
+                            const anchor = getShapeAnchors(startShape).find(a => a.type === shape.startAnchor);
+                            if (anchor) {
+                                fromX = anchor.x;
+                                fromY = anchor.y;
+                            }
+                        }
+                    }
+                    if (shape.endShapeId && shape.endAnchor) {
+                        const endShape = shapes.find(s => s.id === shape.endShapeId);
+                        if (endShape) {
+                            const anchor = getShapeAnchors(endShape).find(a => a.type === shape.endAnchor);
+                            if (anchor) {
+                                toX = anchor.x;
+                                toY = anchor.y;
+                            }
+                        }
+                    }
+                }
+
+                drawArrow(ctx, fromX, fromY, toX, toY);
                 if (shape.fillColor !== "transparent") ctx.fill();
                 ctx.stroke();
                 break;
 
             case "text":
                 if (shape.text) {
-                    ctx.font = "16px sans-serif";
+                    const fontSize = shape.fontSize || 20;
+                    ctx.font = `${fontSize}px sans-serif`;
                     ctx.fillStyle = shape.strokeColor; // Use stroke color for text color
                     ctx.textBaseline = "top";
                     ctx.fillText(shape.text, shape.x, shape.y);
                     // Optional: Render bounding box for debug or during edit
                 }
                 break;
+
+            case "pencil":
+                const pencilPoints = getPencilAbsolutePoints(shape);
+                if (pencilPoints.length === 1) {
+                    ctx.beginPath();
+                    ctx.arc(pencilPoints[0].x, pencilPoints[0].y, Math.max(1, (shape.strokeWidth ?? 2) / 2), 0, Math.PI * 2);
+                    ctx.fillStyle = shape.strokeColor;
+                    ctx.fill();
+                } else if (pencilPoints.length > 1) {
+                    ctx.beginPath();
+                    ctx.moveTo(pencilPoints[0].x, pencilPoints[0].y);
+                    for (let index = 1; index < pencilPoints.length; index += 1) {
+                        ctx.lineTo(pencilPoints[index].x, pencilPoints[index].y);
+                    }
+                    ctx.stroke();
+                }
+                break;
+
+            case "image":
+                const imageBox = getBoundingBox(shape);
+                const imageWidth = imageBox.maxX - imageBox.minX;
+                const imageHeight = imageBox.maxY - imageBox.minY;
+                const cachedImage = shape.imageSrc ? imageCache?.get(shape.imageSrc) : undefined;
+
+                if (cachedImage && cachedImage.complete) {
+                    ctx.drawImage(cachedImage, imageBox.minX, imageBox.minY, imageWidth, imageHeight);
+                } else {
+                    ctx.fillStyle = "#e5e7eb";
+                    ctx.strokeStyle = "#9ca3af";
+                    ctx.lineWidth = 1.5;
+                    ctx.fillRect(imageBox.minX, imageBox.minY, imageWidth, imageHeight);
+                    ctx.strokeRect(imageBox.minX, imageBox.minY, imageWidth, imageHeight);
+                    ctx.beginPath();
+                    ctx.moveTo(imageBox.minX + 12, imageBox.minY + imageHeight - 12);
+                    ctx.lineTo(imageBox.minX + imageWidth / 2, imageBox.minY + imageHeight / 2);
+                    ctx.lineTo(imageBox.maxX - 12, imageBox.minY + imageHeight - 12);
+                    ctx.stroke();
+                }
+                break;
+
+            case "rounded-rectangle":
+                const r = shape.cornerRadius || 12;
+                const { x, y, width: w, height: h } = shape;
+                // Handle negative width/height
+                const startX = w < 0 ? x + w : x;
+                const startY = h < 0 ? y + h : y;
+                const absW = Math.abs(w);
+                const absH = Math.abs(h);
+
+                // Cap radius at half of shortest side
+                const minSide = Math.min(absW, absH);
+                const appliedR = Math.min(r, minSide / 2);
+
+                ctx.beginPath();
+                if (ctx.roundRect) {
+                    ctx.roundRect(startX, startY, absW, absH, appliedR);
+                } else {
+                    // Fallback using arcs
+                    ctx.moveTo(startX + appliedR, startY);
+                    ctx.lineTo(startX + absW - appliedR, startY);
+                    ctx.arcTo(startX + absW, startY, startX + absW, startY + appliedR, appliedR);
+                    ctx.lineTo(startX + absW, startY + absH - appliedR);
+                    ctx.arcTo(startX + absW, startY + absH, startX + absW - appliedR, startY + absH, appliedR);
+                    ctx.lineTo(startX + appliedR, startY + absH);
+                    ctx.arcTo(startX, startY + absH, startX, startY + absH - appliedR, appliedR);
+                    ctx.lineTo(startX, startY + appliedR);
+                    ctx.arcTo(startX, startY, startX + appliedR, startY, appliedR);
+                    ctx.closePath();
+                }
+                if (shape.fillColor !== "transparent") ctx.fill();
+                ctx.stroke();
+                break;
         }
         ctx.restore();
 
-        // Draw selection handles if this is the selected shape
-        if (shape.id === selectedShapeId) {
-            drawSelectionBox(ctx, shape);
+        // Draw selection handles if this is a selected shape
+        if (selectedShapeIds.includes(shape.id)) {
+            // Only show detailed resize handles if exactly one shape is selected
+            drawSelectionBox(ctx, shape, selectedShapeIds.length === 1 && shape.type !== "pencil");
+
+            // Draw connection anchors if not an arrow
+            if (shape.type !== "arrow" && shape.type !== "text" && shape.type !== "pencil" && selectedShapeIds.length === 1) {
+                drawAnchors(ctx, shape);
+            }
         }
+    });
+
+    ctx.restore();
+};
+
+const drawAnchors = (ctx: CanvasRenderingContext2D, shape: Shape) => {
+    ctx.save();
+    ctx.fillStyle = "#ffffff";
+    ctx.strokeStyle = "#10b981"; // distinct green for anchors
+    ctx.lineWidth = 1.5;
+
+    const anchors = getShapeAnchors(shape);
+    anchors.forEach((anchor) => {
+        ctx.beginPath();
+        ctx.arc(anchor.x, anchor.y, 4, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.stroke();
     });
 
     ctx.restore();
@@ -95,7 +262,7 @@ const drawArrow = (ctx: CanvasRenderingContext2D, fromX: number, fromY: number, 
     ctx.lineTo(toX - headlen * Math.cos(angle + Math.PI / 6), toY - headlen * Math.sin(angle + Math.PI / 6));
 };
 
-const drawSelectionBox = (ctx: CanvasRenderingContext2D, shape: Shape) => {
+const drawSelectionBox = (ctx: CanvasRenderingContext2D, shape: Shape, showHandles: boolean = true) => {
     ctx.save();
     ctx.strokeStyle = "#0d6efd"; // Primary blue for selection
     ctx.lineWidth = 1;
@@ -108,18 +275,46 @@ const drawSelectionBox = (ctx: CanvasRenderingContext2D, shape: Shape) => {
     ctx.strokeRect(minX - padding, minY - padding, maxX - minX + padding * 2, maxY - minY + padding * 2);
 
     // Draw resize handles
-    ctx.setLineDash([]);
-    ctx.fillStyle = "#ffffff";
-    ctx.strokeStyle = "#0d6efd";
-    ctx.lineWidth = 1.5;
+    if (showHandles) {
+        ctx.setLineDash([]);
+        ctx.fillStyle = "#ffffff";
+        ctx.strokeStyle = "#0d6efd";
+        ctx.lineWidth = 1.5;
 
-    const handles = getResizeHandles(shape);
-    handles.forEach((handle) => {
-        ctx.fillRect(handle.x, handle.y, handle.width, handle.height);
-        ctx.strokeRect(handle.x, handle.y, handle.width, handle.height);
-    });
+        const handles = getResizeHandles(shape);
+        handles.forEach((handle) => {
+            ctx.fillRect(handle.x, handle.y, handle.width, handle.height);
+            ctx.strokeRect(handle.x, handle.y, handle.width, handle.height);
+        });
+    }
 
     ctx.restore();
+};
+
+export const renderSelectionBox = (ctx: CanvasRenderingContext2D, box: BoundingBox, scale: number, panX: number, panY: number) => {
+    ctx.save();
+    ctx.translate(panX, panY);
+    ctx.scale(scale, scale);
+    ctx.fillStyle = "rgba(13, 110, 253, 0.1)"; // Light transparent blue
+    ctx.strokeStyle = "#0d6efd";
+    ctx.lineWidth = 1 / scale; // Keep stroke visually 1px
+
+    const width = box.maxX - box.minX;
+    const height = box.maxY - box.minY;
+
+    ctx.fillRect(box.minX, box.minY, width, height);
+    ctx.strokeRect(box.minX, box.minY, width, height);
+    ctx.restore();
+};
+
+export const shapesIntersect = (shape: Shape, box: BoundingBox): boolean => {
+    const sBox = getBoundingBox(shape);
+    return (
+        sBox.minX <= box.maxX &&
+        sBox.maxX >= box.minX &&
+        sBox.minY <= box.maxY &&
+        sBox.maxY >= box.minY
+    );
 };
 
 export const getBoundingBox = (shape: Shape): BoundingBox => {
@@ -131,17 +326,15 @@ export const getBoundingBox = (shape: Shape): BoundingBox => {
             maxY: Math.max(shape.y, shape.y + shape.height),
         };
     } else if (shape.type === "text") {
-        // Estimating width since we don't have ctx here to measure exactly,
-        // though ideally text width is updated on the shape when edited.
-        // For simplicity, we rely on updated width/height on shape object.
+        const dims = measureText(shape.text || "", shape.fontSize || 20);
         return {
             minX: shape.x,
             minY: shape.y,
-            maxX: shape.x + shape.width,
-            maxY: shape.y + shape.height,
+            maxX: shape.x + Math.max(shape.width, dims.width),
+            maxY: shape.y + Math.max(shape.height, dims.height),
         };
     } else {
-        // For rect, circle, diamond
+        // For rect, circle, diamond, rounded-rectangle
         // width/height can be negative if drawn backwards
         return {
             minX: Math.min(shape.x, shape.x + shape.width),
@@ -152,7 +345,26 @@ export const getBoundingBox = (shape: Shape): BoundingBox => {
     }
 };
 
+export const getShapeAnchors = (shape: Shape): ConnectionPoint[] => {
+    // Return standard anchor points for connection
+    const { minX, minY, maxX, maxY } = getBoundingBox(shape);
+    const midX = minX + (maxX - minX) / 2;
+    const midY = minY + (maxY - minY) / 2;
+
+    return [
+        { type: "top", x: midX, y: minY, shapeId: shape.id },
+        { type: "bottom", x: midX, y: maxY, shapeId: shape.id },
+        { type: "left", x: minX, y: midY, shapeId: shape.id },
+        { type: "right", x: maxX, y: midY, shapeId: shape.id },
+        { type: "center", x: midX, y: midY, shapeId: shape.id }
+    ];
+};
+
 export const getResizeHandles = (shape: Shape): ResizeHandle[] => {
+    if (shape.type === "pencil") {
+        return [];
+    }
+
     const { minX, minY, maxX, maxY } = getBoundingBox(shape);
     const padding = 4;
 
@@ -229,6 +441,21 @@ export const hitTest = (shape: Shape, x: number, y: number): boolean => {
             { x: shape.x + shape.width, y: shape.y + shape.height }
         );
         return dist <= HIT_TOLERANCE;
+    }
+
+    if (shape.type === "pencil") {
+        const pencilPoints = getPencilAbsolutePoints(shape);
+        if (pencilPoints.length === 1) {
+            return MathUtils.distance({ x, y }, pencilPoints[0]) <= Math.max(HIT_TOLERANCE, (shape.strokeWidth ?? 2) + 2);
+        }
+
+        for (let index = 1; index < pencilPoints.length; index += 1) {
+            const dist = MathUtils.pointToLineDistance({ x, y }, pencilPoints[index - 1], pencilPoints[index]);
+            if (dist <= Math.max(HIT_TOLERANCE, (shape.strokeWidth ?? 2) + 2)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // For other shapes, treating the whole bounding box as selectable for simplicity in a basic whiteboard

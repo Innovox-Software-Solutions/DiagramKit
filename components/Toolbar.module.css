@@ -1,9 +1,14 @@
 .toolbar {
   position: absolute;
-  top: 16px;
-  left: 50%;
+  top: max(16px, calc(env(safe-area-inset-top) + 8px));
+  left: calc(50% + ((var(--toolbar-left-reserve, 0px) - var(--toolbar-right-reserve, 0px)) / 2));
   transform: translateX(-50%);
   display: flex;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  width: max-content;
+  max-width: calc(100vw - var(--toolbar-left-reserve, 16px) - var(--toolbar-right-reserve, 16px));
+  min-width: 0;
   gap: 8px;
   background-color: #ffffff;
   padding: 8px;
@@ -11,11 +16,20 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.05);
   z-index: 100;
   align-items: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.toolbar::-webkit-scrollbar {
+  display: none;
 }
 
 .toolGroup {
   display: flex;
   gap: 4px;
+  flex-shrink: 0;
 }
 
 .divider {
@@ -23,14 +37,15 @@
   background-color: #e5e7eb;
   margin: 0 4px;
   height: 24px;
+  flex-shrink: 0;
 }
 
 .iconButton {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   border: none;
   background-color: transparent;
   border-radius: 8px;
@@ -59,8 +74,8 @@
 }
 
 .colorInput {
-  width: 28px;
-  height: 28px;
+  width: 44px;
+  height: 44px;
   padding: 0;
   border: 1px solid #d1d5db;
   border-radius: 4px;
@@ -75,4 +90,69 @@
 
 .colorInput::-webkit-color-swatch {
   border: none;
+}
+
+@media (max-width: 1200px) {
+  .toolbar {
+    gap: 6px;
+    padding: 6px;
+    min-width: 0;
+  }
+
+  .iconButton {
+    width: 40px;
+    height: 40px;
+  }
+}
+
+@media (max-width: 1024px) {
+  .toolbar {
+    top: auto;
+    bottom: var(--bottom-toolbar-offset, max(8px, env(safe-area-inset-bottom)));
+    left: 50%;
+    transform: translateX(-50%);
+    width: max-content;
+    max-width: calc(100vw - 20px);
+    min-width: 0;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-radius: 14px;
+    gap: 6px;
+    padding: 6px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+  }
+
+  .iconButton {
+    width: 40px;
+    height: 40px;
+  }
+
+  .divider {
+    display: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .toolbar {
+    width: max-content;
+    max-width: calc(100vw - 10px);
+    gap: 4px;
+  }
+}
+
+@media (max-width: 600px) {
+  .toolbar {
+    width: max-content;
+    max-width: calc(100vw - 8px);
+    padding: 5px;
+    gap: 4px;
+  }
+
+  .iconButton {
+    width: 36px;
+    height: 36px;
+    border-radius: 6px;
+  }
 }

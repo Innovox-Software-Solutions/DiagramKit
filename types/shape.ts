@@ -1,4 +1,7 @@
-export type ShapeType = "rectangle" | "circle" | "arrow" | "diamond" | "text";
+export type ShapeType = "rectangle" | "circle" | "arrow" | "diamond" | "text" | "rounded-rectangle" | "image" | "pencil";
+
+export type AnchorType = "top" | "bottom" | "left" | "right" | "center";
+export type StrokeStyle = "solid" | "dashed" | "dotted";
 
 export interface Shape {
     id: string;
@@ -9,10 +12,29 @@ export interface Shape {
     height: number;
     strokeColor: string;
     fillColor: string;
+    strokeWidth?: number;
+    strokeStyle?: StrokeStyle;
     text?: string;
+    fontSize?: number;
+
+    // Arrow specific
+    startShapeId?: string;
+    endShapeId?: string;
+    startAnchor?: AnchorType;
+    endAnchor?: AnchorType;
+
+    // Rounded rectangle specific
+    cornerRadius?: number;
+
+    // Image specific
+    imageSrc?: string;
+    imageName?: string;
+
+    // Pencil specific
+    points?: Point[];
 }
 
-export type ToolType = "pointer" | "rectangle" | "circle" | "arrow" | "diamond" | "text" | "delete";
+export type ToolType = "pointer" | "pencil" | "rectangle" | "circle" | "arrow" | "diamond" | "text" | "rounded-rectangle" | "delete";
 
 export interface Point {
     x: number;
@@ -33,4 +55,11 @@ export interface BoundingBox {
     minY: number;
     maxX: number;
     maxY: number;
+}
+
+export interface ConnectionPoint {
+    x: number;
+    y: number;
+    type: AnchorType;
+    shapeId: string;
 }

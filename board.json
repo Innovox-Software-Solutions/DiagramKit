@@ -1,0 +1,142 @@
+[
+  {
+    "id": "e27b4070-af02-45af-b466-a55e8a2b42bd",
+    "type": "rectangle",
+    "x": 298.66668701171875,
+    "y": 118.22223663330078,
+    "width": 295.111083984375,
+    "height": 255.1111068725586,
+    "strokeColor": "#000000",
+    "fillColor": "transparent"
+  },
+  {
+    "id": "da1904d6-e23b-4966-bea3-e04dbade1c96",
+    "type": "circle",
+    "x": 1067.5556640625,
+    "y": 132.44442749023438,
+    "width": 323.55548095703125,
+    "height": 288.88890075683594,
+    "strokeColor": "#000000",
+    "fillColor": "transparent"
+  },
+  {
+    "id": "464a8ae3-8fcb-4bb8-b2e7-cd6c73fef1fb",
+    "type": "rectangle",
+    "x": 635.5555419921875,
+    "y": 199.1111297607422,
+    "width": 328.888916015625,
+    "height": 315.55555725097656,
+    "strokeColor": "#53184e",
+    "fillColor": "#e2e8f0"
+  },
+  {
+    "id": "898122e0-d5aa-4173-b20a-505aa7d7e8e2",
+    "type": "diamond",
+    "x": 136.88888549804688,
+    "y": 464,
+    "width": 392.0000305175781,
+    "height": 259.5555419921875,
+    "strokeColor": "#53184e",
+    "fillColor": "#2e75d1"
+  },
+  {
+    "id": "3090da7c-810e-4340-ab32-7fcd459626f5",
+    "type": "circle",
+    "x": 1699.5555419921875,
+    "y": 784.0000610351562,
+    "width": -349.3333740234375,
+    "height": -534.2222518920898,
+    "strokeColor": "#53184e",
+    "fillColor": "#2e75d1"
+  },
+  {
+    "id": "ab7d6292-94ca-4bbf-829c-8d78072a700e",
+    "type": "rounded-rectangle",
+    "x": 1008.888671875,
+    "y": -606.6666514078773,
+    "width": 419.5555419921875,
+    "height": 412.44439697265625,
+    "strokeColor": "#000000",
+    "fillColor": "transparent"
+  },
+  {
+    "id": "6e66bef4-b262-4dca-822d-365d9c6841a5",
+    "type": "rounded-rectangle",
+    "x": 257.77777099609375,
+    "y": -589.7777353922523,
+    "width": 338.6666564941406,
+    "height": 380.44444274902344,
+    "strokeColor": "#000000",
+    "fillColor": "transparent"
+  },
+  {
+    "id": "c8ab186f-1e8e-49f6-835c-e40ab4a79c4a",
+    "type": "arrow",
+    "x": 770.666748046875,
+    "y": -436.0000101725258,
+    "width": 289.7777099609375,
+    "height": -18.6666259765625,
+    "strokeColor": "#000000",
+    "fillColor": "transparent",
+    "startShapeId": "6e66bef4-b262-4dca-822d-365d9c6841a5",
+    "endShapeId": "ab7d6292-94ca-4bbf-829c-8d78072a700e",
+    "startAnchor": "right",
+    "endAnchor": "left"
+  },
+  {
+    "id": "0313cd14-4c36-449a-a744-53be2980d9d1",
+    "type": "text",
+    "x": 574.3892692501669,
+    "y": -1067.7724761723714,
+    "width": 150,
+    "height": 24,
+    "strokeColor": "#000000",
+    "fillColor": "transparent",
+    "text": "iug",
+    "fontSize": 26
+  },
+  {
+    "id": "491de0ff-3e7e-49ff-99f2-b54260b27e73",
+    "type": "rectangle",
+    "x": 215.8486007133377,
+    "y": -1328.4326061175439,
+    "width": 312.0829199600206,
+    "height": 310.19148333320277,
+    "strokeColor": "#000000",
+    "fillColor": "transparent"
+  },
+  {
+    "id": "d99683b2-6a38-4b91-bc1e-8d417e42bb07",
+    "type": "circle",
+    "x": 1054.6896892755053,
+    "y": -1351.1295534253086,
+    "width": 212.78377954707958,
+    "height": 218.45805695930585,
+    "strokeColor": "#000000",
+    "fillColor": "transparent"
+  },
+  {
+    "id": "61d996e6-2bd5-4f89-860a-d1784f868000",
+    "type": "arrow",
+    "x": 1134.1287938091984,
+    "y": -1035.2638251481076,
+    "width": 299.7887604609575,
+    "height": 3.78280831718007,
+    "strokeColor": "#000000",
+    "fillColor": "transparent",
+    "startShapeId": "491de0ff-3e7e-49ff-99f2-b54260b27e73",
+    "endShapeId": "d99683b2-6a38-4b91-bc1e-8d417e42bb07",
+    "startAnchor": "right",
+    "endAnchor": "left"
+  },
+  {
+    "id": "9af479c4-7252-4cfe-b951-87e165440dc8",
+    "type": "rectangle",
+    "x": 379.5555725097656,
+    "y": -1847.9999796549464,
+    "width": 351.9999694824219,
+    "height": 264.88885498046875,
+    "strokeColor": "#000000",
+    "fillColor": "transparent"
+  }
+]
