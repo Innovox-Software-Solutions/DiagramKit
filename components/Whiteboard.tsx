@@ -9,7 +9,7 @@ import { UserMenu } from './UserMenu';
 import { AuthModal } from './AuthModal';
 import { ExportModal, ExportOptions } from './ExportModal';
 import { Shape, ToolType, Point, AnchorType, StrokeStyle } from '@/types/shape';
-import { renderShapes, hitTest, hitTestHandle, getShapeAnchors, getResizeHandles, MathUtils, measureText, renderSelectionBox, shapesIntersect } from '@/lib/drawing';
+import { renderShapes, hitTest, hitTestHandle, getBoundingBox, getShapeAnchors, getResizeHandles, MathUtils, measureText, renderSelectionBox, shapesIntersect } from '@/lib/drawing';
 import styles from './Whiteboard.module.css';
 
 interface BoardRecord {
@@ -83,6 +83,12 @@ export const Whiteboard: React.FC = () => {
 
     // Canvas & Interaction state
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const selectionBoxBaseSelectedIdsRef = useRef<string[]>([]);
+    const multiResizeRef = useRef<null | {
+        startPointer: Point;
+        startBox: { minX: number; minY: number; maxX: number; maxY: number };
+        startShapes: Map<string, Shape>;
+    }>(null);
     const [isDrawing, setIsDrawing] = useState(false);
     const [isPanning, setIsPanning] = useState(false);
     const [isDragging, setIsDragging] = useState(false);
@@ -300,6 +306,56 @@ export const Whiteboard: React.FC = () => {
         // Draw all standard shapes
         renderShapes(ctx, shapes, selectedShapeIds, scale, panOffset.x, panOffset.y, imageCacheRef.current);
 
+        // Group selection handles (multi-select)
+        if (selectedShapeIds.length > 1) {
+            const selected = shapes.filter(s => selectedShapeIds.includes(s.id));
+            if (selected.length > 0) {
+                const firstBox = getBoundingBox(selected[0]);
+                const groupBox = selected.slice(1).reduce((acc, s) => {
+                    const b = getBoundingBox(s);
+                    return {
+                        minX: Math.min(acc.minX, b.minX),
+                        minY: Math.min(acc.minY, b.minY),
+                        maxX: Math.max(acc.maxX, b.maxX),
+                        maxY: Math.max(acc.maxY, b.maxY),
+                    };
+                }, firstBox);
+
+                const padding = 4;
+                const handleShape: Shape = {
+                    id: "__group__",
+                    type: "rectangle",
+                    x: groupBox.minX - padding,
+                    y: groupBox.minY - padding,
+                    width: (groupBox.maxX - groupBox.minX) + padding * 2,
+                    height: (groupBox.maxY - groupBox.minY) + padding * 2,
+                    strokeColor: "#0d6efd",
+                    fillColor: "transparent",
+                };
+
+                ctx.save();
+                ctx.translate(panOffset.x, panOffset.y);
+                ctx.scale(scale, scale);
+                ctx.strokeStyle = "#0d6efd";
+                ctx.lineWidth = 1 / scale;
+                ctx.setLineDash([5, 5]);
+                ctx.strokeRect(handleShape.x, handleShape.y, handleShape.width, handleShape.height);
+                ctx.setLineDash([]);
+
+                // Handles
+                ctx.fillStyle = "#ffffff";
+                ctx.strokeStyle = "#0d6efd";
+                ctx.lineWidth = 1.5 / scale;
+                const handles = getResizeHandles(handleShape);
+                handles.forEach((handle) => {
+                    ctx.fillRect(handle.x, handle.y, handle.width, handle.height);
+                    ctx.strokeRect(handle.x, handle.y, handle.width, handle.height);
+                });
+
+                ctx.restore();
+            }
+        }
+
         if (selectionBox) {
             const minX = Math.min(selectionBox.startX, selectionBox.endX);
             const maxX = Math.max(selectionBox.startX, selectionBox.endX);
@@ -439,6 +495,47 @@ export const Whiteboard: React.FC = () => {
         }
 
         if (currentTool === 'pointer' || currentTool === 'delete') {
+            // Group resize handles (only in pointer mode)
+            if (currentTool === 'pointer' && selectedShapeIds.length > 1) {
+                const selected = shapes.filter(s => selectedShapeIds.includes(s.id));
+                if (selected.length > 0) {
+                    const firstBox = getBoundingBox(selected[0]);
+                    const groupBox = selected.slice(1).reduce((acc, s) => {
+                        const b = getBoundingBox(s);
+                        return {
+                            minX: Math.min(acc.minX, b.minX),
+                            minY: Math.min(acc.minY, b.minY),
+                            maxX: Math.max(acc.maxX, b.maxX),
+                            maxY: Math.max(acc.maxY, b.maxY),
+                        };
+                    }, firstBox);
+                    const padding = 4;
+                    const handleShape: Shape = {
+                        id: "__group__",
+                        type: "rectangle",
+                        x: groupBox.minX - padding,
+                        y: groupBox.minY - padding,
+                        width: (groupBox.maxX - groupBox.minX) + padding * 2,
+                        height: (groupBox.maxY - groupBox.minY) + padding * 2,
+                        strokeColor: "#0d6efd",
+                        fillColor: "transparent",
+                    };
+                    const handle = hitTestHandle(handleShape, point.x, point.y);
+                    if (handle) {
+                        const resizeHandle = getResizeHandles(handleShape).find(item => item.id === handle);
+                        if (resizeHandle) setCanvasCursor(resizeHandle.cursor);
+                        setIsResizing(handle);
+                        setStartPoint(point);
+                        multiResizeRef.current = {
+                            startPointer: point,
+                            startBox: groupBox,
+                            startShapes: new Map(selected.map(s => [s.id, { ...s, points: s.points ? s.points.map(p => ({ ...p })) : undefined }])),
+                        };
+                        return;
+                    }
+                }
+            }
+
             // Check handles first
             if (selectedShapeIds.length === 1) {
                 const selectedShape = shapes.find(s => s.id === selectedShapeIds[0]);
@@ -471,15 +568,22 @@ export const Whiteboard: React.FC = () => {
                     if (selectedShapeIds.includes(hitShapeId)) setSelectedShapeIds(selectedShapeIds.filter(id => id !== hitShapeId));
                 } else {
                     setCanvasCursor('grabbing');
-                    if (!selectedShapeIds.includes(hitShapeId)) {
+                    if (e.shiftKey) {
+                        if (selectedShapeIds.includes(hitShapeId)) {
+                            setSelectedShapeIds(selectedShapeIds.filter(id => id !== hitShapeId));
+                            return;
+                        }
+                        setSelectedShapeIds([...selectedShapeIds, hitShapeId]);
+                    } else if (!selectedShapeIds.includes(hitShapeId) || selectedShapeIds.length > 1) {
                         setSelectedShapeIds([hitShapeId]);
                     }
                     setIsDragging(true);
                     setStartPoint(point);
                 }
             } else {
-                setSelectedShapeIds([]);
                 if (currentTool === 'pointer') {
+                    selectionBoxBaseSelectedIdsRef.current = e.shiftKey ? selectedShapeIds : [];
+                    if (!e.shiftKey) setSelectedShapeIds([]);
                     setSelectionBox({ startX: point.x, startY: point.y, endX: point.x, endY: point.y });
                 }
             }
@@ -547,11 +651,90 @@ export const Whiteboard: React.FC = () => {
             const maxY = Math.max(selectionBox.startY, point.y);
 
             const newSelectedIds = shapes.filter(s => shapesIntersect(s, { minX, minY, maxX, maxY })).map(s => s.id);
-            setSelectedShapeIds(newSelectedIds);
+            const base = selectionBoxBaseSelectedIdsRef.current;
+            const merged = base.length > 0 ? Array.from(new Set([...base, ...newSelectedIds])) : newSelectedIds;
+            setSelectedShapeIds(merged);
             return;
         }
 
-        if (isResizing && selectedShapeIds.length === 1 && startPoint) {
+        if (isResizing && multiResizeRef.current && startPoint) {
+            const { startPointer, startBox, startShapes } = multiResizeRef.current;
+            const dx = point.x - startPointer.x;
+            const dy = point.y - startPointer.y;
+
+            let newMinX = startBox.minX;
+            let newMinY = startBox.minY;
+            let newMaxX = startBox.maxX;
+            let newMaxY = startBox.maxY;
+
+            switch (isResizing) {
+                case 'se': newMaxX += dx; newMaxY += dy; break;
+                case 'sw': newMinX += dx; newMaxY += dy; break;
+                case 'ne': newMaxX += dx; newMinY += dy; break;
+                case 'nw': newMinX += dx; newMinY += dy; break;
+            }
+
+            const minSize = 10;
+            if (newMaxX - newMinX < minSize) {
+                if (isResizing === 'sw' || isResizing === 'nw') newMinX = newMaxX - minSize;
+                else newMaxX = newMinX + minSize;
+            }
+            if (newMaxY - newMinY < minSize) {
+                if (isResizing === 'ne' || isResizing === 'nw') newMinY = newMaxY - minSize;
+                else newMaxY = newMinY + minSize;
+            }
+
+            const startW = Math.max(1, startBox.maxX - startBox.minX);
+            const startH = Math.max(1, startBox.maxY - startBox.minY);
+            const scaleX = (newMaxX - newMinX) / startW;
+            const scaleY = (newMaxY - newMinY) / startH;
+
+            setShapes(prev => prev.map((shape) => {
+                if (!selectedShapeIds.includes(shape.id)) return shape;
+                const baseShape = startShapes.get(shape.id);
+                if (!baseShape) return shape;
+
+                const box = getBoundingBox(baseShape);
+                const boxW = Math.max(1, box.maxX - box.minX);
+                const boxH = Math.max(1, box.maxY - box.minY);
+                const targetMinX = newMinX + (box.minX - startBox.minX) * scaleX;
+                const targetMinY = newMinY + (box.minY - startBox.minY) * scaleY;
+                const targetW = boxW * scaleX;
+                const targetH = boxH * scaleY;
+
+                const widthSign = baseShape.width >= 0 ? 1 : -1;
+                const heightSign = baseShape.height >= 0 ? 1 : -1;
+
+                if (baseShape.type === 'pencil') {
+                    const nextPoints = baseShape.points?.map(p => ({
+                        x: p.x * scaleX,
+                        y: p.y * scaleY,
+                    }));
+                    return {
+                        ...shape,
+                        x: targetMinX,
+                        y: targetMinY,
+                        width: targetW,
+                        height: targetH,
+                        points: nextPoints,
+                    };
+                }
+
+                if (baseShape.type === 'text') {
+                    const factor = (Math.abs(scaleX) + Math.abs(scaleY)) / 2;
+                    const nextFontSize = Math.max(10, Math.round((baseShape.fontSize || 20) * factor));
+                    const dims = measureText(baseShape.text || '', nextFontSize);
+                    return { ...shape, x: targetMinX, y: targetMinY, width: dims.width, height: dims.height, fontSize: nextFontSize };
+                }
+
+                const nextX = widthSign >= 0 ? targetMinX : targetMinX + targetW;
+                const nextY = heightSign >= 0 ? targetMinY : targetMinY + targetH;
+                const nextW = widthSign >= 0 ? targetW : -targetW;
+                const nextH = heightSign >= 0 ? targetH : -targetH;
+
+                return { ...shape, x: nextX, y: nextY, width: nextW, height: nextH };
+            }));
+        } else if (isResizing && selectedShapeIds.length === 1 && startPoint) {
             const selectedShapeId = selectedShapeIds[0];
             const resizingShape = shapes.find(s => s.id === selectedShapeId);
             if (resizingShape) {
@@ -620,8 +803,50 @@ export const Whiteboard: React.FC = () => {
                     setCanvasCursor(hoveredShape ? 'move' : 'default');
                 }
             } else {
-                const hoveredShape = shapes.some(shape => hitTest(shape, point.x, point.y));
-                setCanvasCursor(hoveredShape ? 'move' : 'default');
+                if (selectedShapeIds.length > 1) {
+                    const selected = shapes.filter(s => selectedShapeIds.includes(s.id));
+                    if (selected.length > 0) {
+                        const firstBox = getBoundingBox(selected[0]);
+                        const groupBox = selected.slice(1).reduce((acc, s) => {
+                            const b = getBoundingBox(s);
+                            return {
+                                minX: Math.min(acc.minX, b.minX),
+                                minY: Math.min(acc.minY, b.minY),
+                                maxX: Math.max(acc.maxX, b.maxX),
+                                maxY: Math.max(acc.maxY, b.maxY),
+                            };
+                        }, firstBox);
+                        const padding = 4;
+                        const handleShape: Shape = {
+                            id: "__group__",
+                            type: "rectangle",
+                            x: groupBox.minX - padding,
+                            y: groupBox.minY - padding,
+                            width: (groupBox.maxX - groupBox.minX) + padding * 2,
+                            height: (groupBox.maxY - groupBox.minY) + padding * 2,
+                            strokeColor: "#0d6efd",
+                            fillColor: "transparent",
+                        };
+                        const hoveredHandle = getResizeHandles(handleShape).find(handle => (
+                            point.x >= handle.x &&
+                            point.x <= handle.x + handle.width &&
+                            point.y >= handle.y &&
+                            point.y <= handle.y + handle.height
+                        ));
+                        if (hoveredHandle) {
+                            setCanvasCursor(hoveredHandle.cursor);
+                        } else {
+                            const hoveredShape = shapes.some(shape => hitTest(shape, point.x, point.y));
+                            setCanvasCursor(hoveredShape ? 'move' : 'default');
+                        }
+                    } else {
+                        const hoveredShape = shapes.some(shape => hitTest(shape, point.x, point.y));
+                        setCanvasCursor(hoveredShape ? 'move' : 'default');
+                    }
+                } else {
+                    const hoveredShape = shapes.some(shape => hitTest(shape, point.x, point.y));
+                    setCanvasCursor(hoveredShape ? 'move' : 'default');
+                }
             }
         } else {
             setCanvasCursor(getToolCursor(currentTool));
@@ -672,6 +897,7 @@ export const Whiteboard: React.FC = () => {
         if (isResizing) {
             setIsResizing(null);
             setStartPoint(null);
+            multiResizeRef.current = null;
             setCanvasCursor(getToolCursor(currentTool));
             saveHistory(shapes); // Commit resize
             return;
