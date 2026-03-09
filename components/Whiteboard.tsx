@@ -93,6 +93,8 @@ export const Whiteboard: React.FC = () => {
         start?: { shapeId: string; anchor: AnchorType; point: Point };
         end?: { shapeId: string; anchor: AnchorType; point: Point };
     }>(null);
+    const clipboardRef = useRef<Shape[] | null>(null);
+    const pasteCountRef = useRef(0);
     const [isDrawing, setIsDrawing] = useState(false);
     const [isPanning, setIsPanning] = useState(false);
     const [isDragging, setIsDragging] = useState(false);
@@ -1171,16 +1173,93 @@ export const Whiteboard: React.FC = () => {
 
     // Keyboard bindings
     useEffect(() => {
+        const deepCloneShape = (shape: Shape): Shape => ({
+            ...shape,
+            points: shape.points ? shape.points.map(p => ({ ...p })) : undefined,
+        });
+
+        const getSelectedShapesInOrder = (): Shape[] => {
+            if (selectedShapeIds.length === 0) return [];
+            const selectedSet = new Set(selectedShapeIds);
+            return shapes.filter(s => selectedSet.has(s.id)).map(deepCloneShape);
+        };
+
+        const pasteShapes = (sourceShapes: Shape[]) => {
+            if (sourceShapes.length === 0) return;
+
+            pasteCountRef.current += 1;
+            const offset = 24 * pasteCountRef.current;
+
+            const idMap = new Map<string, string>();
+            for (const s of sourceShapes) {
+                idMap.set(s.id, uuidv4());
+            }
+
+            const next = sourceShapes.map((s) => {
+                const nextId = idMap.get(s.id) ?? uuidv4();
+                const nextShape: Shape = {
+                    ...deepCloneShape(s),
+                    id: nextId,
+                    x: s.x + offset,
+                    y: s.y + offset,
+                };
+
+                if (s.type === 'arrow') {
+                    const nextStartId = s.startShapeId ? idMap.get(s.startShapeId) : undefined;
+                    const nextEndId = s.endShapeId ? idMap.get(s.endShapeId) : undefined;
+
+                    // Only keep smart-linking if both endpoints are part of the paste.
+                    if (nextStartId && nextEndId) {
+                        nextShape.startShapeId = nextStartId;
+                        nextShape.endShapeId = nextEndId;
+                    } else {
+                        delete nextShape.startShapeId;
+                        delete nextShape.endShapeId;
+                        delete nextShape.startAnchor;
+                        delete nextShape.endAnchor;
+                    }
+                }
+
+                return nextShape;
+            });
+
+            saveHistory([...shapes, ...next]);
+            setSelectedShapeIds(next.map(s => s.id));
+        };
+
         const handleKeyDown = (e: KeyboardEvent) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+            const isEditingText = document.activeElement?.tagName === 'TEXTAREA';
+            const isMeta = e.ctrlKey || e.metaKey;
+            const key = e.key.toLowerCase();
+
+            if (isMeta && key === 'z') {
+                e.preventDefault();
                 if (e.shiftKey) {
                     redo();
                 } else {
                     undo();
                 }
-            } else if ((e.ctrlKey || e.metaKey) && e.key === 'a' && document.activeElement?.tagName !== 'TEXTAREA') {
+            } else if (isMeta && key === 'y') {
+                e.preventDefault();
+                redo();
+            } else if (isMeta && key === 'a' && !isEditingText) {
                 e.preventDefault();
                 setSelectedShapeIds(shapes.map(s => s.id));
+            } else if (isMeta && key === 'c' && !isEditingText) {
+                if (selectedShapeIds.length === 0) return;
+                e.preventDefault();
+                clipboardRef.current = getSelectedShapesInOrder();
+                pasteCountRef.current = 0;
+            } else if (isMeta && key === 'v' && !isEditingText) {
+                if (!clipboardRef.current || clipboardRef.current.length === 0) return;
+                e.preventDefault();
+                pasteShapes(clipboardRef.current);
+            } else if (isMeta && key === 'd' && !isEditingText) {
+                // Duplicate selection (browser default is bookmark on Ctrl+D)
+                if (selectedShapeIds.length === 0) return;
+                e.preventDefault();
+                pasteCountRef.current = 0;
+                pasteShapes(getSelectedShapesInOrder());
             } else if (e.key === 'Delete' || e.key === 'Backspace') {
                 // Only delete if we're not editing text
                 if (selectedShapeIds.length > 0 && document.activeElement?.tagName !== 'TEXTAREA') {
