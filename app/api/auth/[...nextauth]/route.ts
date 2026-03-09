@@ -1,5 +1,5 @@
 import { handlers } from "@/lib/auth"
-import { getClientIp, rateLimit } from "@/lib/rate-limit"
+import { getClientId, rateLimit } from "@/lib/rate-limit"
 import { NextRequest, NextResponse } from "next/server"
 
 export const runtime = "nodejs"
@@ -43,7 +43,7 @@ async function guard(req: Request) {
 
   if (process.env.NODE_ENV === "production") {
     const expectedHost = getExpectedHost()
-    const host = req.headers.get("host")
+    const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host")
     if (expectedHost && host && host !== expectedHost) {
       return NextResponse.json({ error: "Invalid host" }, { status: 400 })
     }
@@ -53,9 +53,9 @@ async function guard(req: Request) {
     return NextResponse.json({ error: "Invalid origin" }, { status: 403 })
   }
 
-  const ip = getClientIp(req)
+  const clientId = getClientId(req)
   const { limit, windowMs } = getRateLimitConfig(pathname)
-  const bucketKey = `auth:${ip}:${req.method}:${pathname}`
+  const bucketKey = `auth:${clientId}:${req.method}:${pathname}`
   const rl = rateLimit({ key: bucketKey, limit, windowMs })
 
   if (!rl.ok) {

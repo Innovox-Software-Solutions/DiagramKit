@@ -22,7 +22,9 @@ const googleClientId = requiredEnv("AUTH_GOOGLE_ID") ?? ""
 const googleClientSecret = requiredEnv("AUTH_GOOGLE_SECRET") ?? ""
 const authSecret = requiredEnv("AUTH_SECRET")
 const trustHost =
-  process.env.NODE_ENV !== "production" || process.env.AUTH_TRUST_HOST?.trim() === "true"
+  process.env.NODE_ENV !== "production" ||
+  !!process.env.AUTH_URL?.trim() ||
+  process.env.AUTH_TRUST_HOST?.trim() === "true"
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   secret: authSecret,

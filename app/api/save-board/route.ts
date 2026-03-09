@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import prisma from "@/lib/prisma"
-import { getClientIp, rateLimit } from "@/lib/rate-limit"
+import { getClientId, rateLimit } from "@/lib/rate-limit"
 
 export async function POST(req: Request) {
   try {
@@ -14,9 +14,9 @@ export async function POST(req: Request) {
       )
     }
 
-    const ip = getClientIp(req)
+    const clientId = getClientId(req)
     const rl = rateLimit({
-      key: `save-board:${session.user.id}:${ip}`,
+      key: `save-board:${session.user.id}:${clientId}`,
       limit: 30,
       windowMs: 60_000,
     })
@@ -28,6 +28,15 @@ export async function POST(req: Request) {
           "Cache-Control": "no-store",
         },
       })
+    }
+
+    const contentLengthHeader = req.headers.get("content-length")
+    const contentLength = contentLengthHeader ? Number(contentLengthHeader) : NaN
+    if (Number.isFinite(contentLength) && contentLength > 1_000_000) {
+      return NextResponse.json(
+        { error: "Payload too large" },
+        { status: 413, headers: { "Cache-Control": "no-store" } },
+      )
     }
 
     let data: unknown

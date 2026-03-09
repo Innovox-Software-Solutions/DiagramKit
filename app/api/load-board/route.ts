@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import prisma from "@/lib/prisma"
-import { getClientIp, rateLimit } from "@/lib/rate-limit"
+import { getClientId, rateLimit } from "@/lib/rate-limit"
 
 export async function GET(req: Request) {
   try {
@@ -14,9 +14,9 @@ export async function GET(req: Request) {
       )
     }
 
-    const ip = getClientIp(req)
+    const clientId = getClientId(req)
     const rl = rateLimit({
-      key: `load-board:${session.user.id}:${ip}`,
+      key: `load-board:${session.user.id}:${clientId}`,
       limit: 120,
       windowMs: 60_000,
     })

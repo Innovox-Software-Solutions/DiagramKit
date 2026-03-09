@@ -70,3 +70,12 @@ export function getClientIp(req: Request): string {
   if (cfIp) return cfIp.trim()
   return "unknown"
 }
+
+export function getClientId(req: Request): string {
+  const ip = getClientIp(req)
+  if (ip !== "unknown") return ip
+  const ua = req.headers.get("user-agent")?.trim()
+  if (!ua) return "unknown"
+  // Avoid storing unbounded header values in the key.
+  return `ua:${ua.slice(0, 160)}`
+}
