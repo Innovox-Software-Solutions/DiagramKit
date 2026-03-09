@@ -89,6 +89,10 @@ export const Whiteboard: React.FC = () => {
         startBox: { minX: number; minY: number; maxX: number; maxY: number };
         startShapes: Map<string, Shape>;
     }>(null);
+    const arrowDraftRef = useRef<null | {
+        start?: { shapeId: string; anchor: AnchorType; point: Point };
+        end?: { shapeId: string; anchor: AnchorType; point: Point };
+    }>(null);
     const [isDrawing, setIsDrawing] = useState(false);
     const [isPanning, setIsPanning] = useState(false);
     const [isDragging, setIsDragging] = useState(false);
@@ -424,18 +428,19 @@ export const Whiteboard: React.FC = () => {
         if (currentTool === 'arrow' && hoveredAnchor) {
             const shp = shapes.find(s => s.id === hoveredAnchor.shapeId);
             if (shp) {
-                // simple trick: renderShapes draws all anchors if selected, but we want just this one globally on hover.
                 ctx.save();
                 ctx.translate(panOffset.x, panOffset.y);
                 ctx.scale(scale, scale);
-                ctx.fillStyle = "#3b82f6";
-                ctx.beginPath();
-                // To get exact coords we'd use the getShapeAnchors export, but for simplicity here's a rough hover indicator
-                // Assuming anchors are near center/edges
-                const cx = shp.x + shp.width / 2;
-                const cy = shp.y + shp.height / 2;
-                ctx.arc(cx, cy, 6, 0, 2 * Math.PI);
-                ctx.fill();
+                const anchor = getShapeAnchors(shp).find(a => a.type === hoveredAnchor.type);
+                if (anchor) {
+                    ctx.fillStyle = "#3b82f6";
+                    ctx.strokeStyle = "#ffffff";
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.arc(anchor.x, anchor.y, 6, 0, 2 * Math.PI);
+                    ctx.fill();
+                    ctx.stroke();
+                }
                 ctx.restore();
             }
         }
@@ -475,6 +480,53 @@ export const Whiteboard: React.FC = () => {
         };
     };
 
+    const ARROW_SNAP_RADIUS = 18;
+
+    const findClosestAnchor = (point: Point) => {
+        // 1) Prefer explicit proximity to an edge anchor (top/bottom/left/right).
+        let best: null | { shapeId: string; anchor: AnchorType; point: Point; dist: number } = null;
+        for (const s of shapes) {
+            if (s.type === 'arrow' || s.type === 'text' || s.type === 'pencil') continue;
+            const anchors = getShapeAnchors(s);
+            for (const a of anchors) {
+                if (a.type === 'center') continue; // edges only
+                const d = MathUtils.distance(point, { x: a.x, y: a.y });
+                if (d <= ARROW_SNAP_RADIUS && (!best || d < best.dist)) {
+                    best = { shapeId: a.shapeId, anchor: a.type, point: { x: a.x, y: a.y }, dist: d };
+                }
+            }
+        }
+
+        if (best) return best;
+
+        // 2) If the pointer is on/inside a shape, snap to the nearest edge (midpoint anchor).
+        for (let i = shapes.length - 1; i >= 0; i--) {
+            const s = shapes[i];
+            if (s.type === 'arrow' || s.type === 'text' || s.type === 'pencil') continue;
+            if (!hitTest(s, point.x, point.y)) continue;
+
+            const box = getBoundingBox(s);
+            const dTop = Math.abs(point.y - box.minY);
+            const dBottom = Math.abs(point.y - box.maxY);
+            const dLeft = Math.abs(point.x - box.minX);
+            const dRight = Math.abs(point.x - box.maxX);
+            const min = Math.min(dTop, dBottom, dLeft, dRight);
+            let anchor: AnchorType = 'right';
+            if (min === dTop) anchor = 'top';
+            else if (min === dBottom) anchor = 'bottom';
+            else if (min === dLeft) anchor = 'left';
+            else anchor = 'right';
+
+            const snapped = getShapeAnchors(s).find(a => a.type === anchor);
+            if (snapped) {
+                return { shapeId: snapped.shapeId, anchor: snapped.type, point: { x: snapped.x, y: snapped.y }, dist: 0 };
+            }
+            break;
+        }
+
+        return null;
+    };
+
     const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
         e.preventDefault();
         (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
@@ -492,6 +544,24 @@ export const Whiteboard: React.FC = () => {
         // Save current point for text edit commit if clicking away
         if (editingText && currentTool !== 'text') {
             commitTextEdit();
+        }
+
+        if (currentTool === 'arrow') {
+            const snap = findClosestAnchor(point);
+            const start = snap ? snap.point : point;
+            if (snap) {
+                arrowDraftRef.current = { start: { shapeId: snap.shapeId, anchor: snap.anchor, point: start } };
+                setHoveredAnchor({ shapeId: snap.shapeId, type: snap.anchor });
+            } else {
+                arrowDraftRef.current = null;
+                setHoveredAnchor(null);
+            }
+            setCanvasCursor(getToolCursor('arrow'));
+            setIsDrawing(true);
+            setStartPoint(start);
+            setCurrentPoint(start);
+            setSelectedShapeIds([]);
+            return;
         }
 
         if (currentTool === 'pointer' || currentTool === 'delete') {
@@ -623,6 +693,26 @@ export const Whiteboard: React.FC = () => {
         }
 
         const point = getCanvasPoint(e);
+        if (isDrawing && currentTool === 'arrow') {
+            const snap = findClosestAnchor(point);
+            const nextPoint = snap ? snap.point : point;
+            setCurrentPoint(nextPoint);
+            if (snap) {
+                setHoveredAnchor({ shapeId: snap.shapeId, type: snap.anchor });
+                const existing = arrowDraftRef.current ?? {};
+                arrowDraftRef.current = {
+                    ...existing,
+                    end: { shapeId: snap.shapeId, anchor: snap.anchor, point: snap.point },
+                };
+            } else {
+                setHoveredAnchor(null);
+                if (arrowDraftRef.current) {
+                    arrowDraftRef.current = { ...arrowDraftRef.current, end: undefined };
+                }
+            }
+            return;
+        }
+
         setCurrentPoint(point);
 
         if (isDrawing && currentTool === 'pencil') {
@@ -854,33 +944,11 @@ export const Whiteboard: React.FC = () => {
 
         // Pointer hover effects (for arrow anchors)
         if (currentTool === 'arrow' && !isDrawing) {
-            let foundHover = false;
-            for (const s of shapes) {
-                if (s.type === 'arrow' || s.type === 'text' || s.type === 'pencil') continue;
-                const anchors = getShapeAnchors(s);
-                const hit = anchors.find(a => MathUtils.distance(point, { x: a.x, y: a.y }) < 15);
-                if (hit) {
-                    setHoveredAnchor({ shapeId: hit.shapeId, type: hit.type });
-                    foundHover = true;
-                    break;
-                }
-            }
-            if (!foundHover && hoveredAnchor) setHoveredAnchor(null);
-        } else if (currentTool === 'arrow' && isDrawing) {
-            let foundHover = false;
-            for (const s of shapes) {
-                if (s.type === 'arrow' || s.type === 'text' || s.type === 'pencil') continue;
-                const anchors = getShapeAnchors(s);
-                const hit = anchors.find(a => MathUtils.distance(point, { x: a.x, y: a.y }) < 15);
-                if (hit) {
-                    setHoveredAnchor({ shapeId: hit.shapeId, type: hit.type });
-                    foundHover = true;
-                    break;
-                }
-            }
-            if (!foundHover && hoveredAnchor) setHoveredAnchor(null);
-        } else {
-            if (hoveredAnchor) setHoveredAnchor(null);
+            const snap = findClosestAnchor(point);
+            if (snap) setHoveredAnchor({ shapeId: snap.shapeId, type: snap.anchor });
+            else if (hoveredAnchor) setHoveredAnchor(null);
+        } else if (currentTool !== 'arrow' && hoveredAnchor) {
+            setHoveredAnchor(null);
         }
     };
 
@@ -964,27 +1032,17 @@ export const Whiteboard: React.FC = () => {
             // Smart arrow connection logic
             let startShapeId, endShapeId, startAnchor, endAnchor;
             if (currentTool === 'arrow') {
-                // Check if startPoint was on an anchor
-                for (const tempShape of shapes) {
-                    if (tempShape.type === 'arrow' || tempShape.type === 'text' || tempShape.type === 'pencil') continue;
-                    const anchors = getShapeAnchors(tempShape);
-                    const startHit = anchors.find(a => MathUtils.distance(startPoint, { x: a.x, y: a.y }) < 15);
-                    if (startHit) {
-                        startShapeId = startHit.shapeId;
-                        startAnchor = startHit.type;
-                        break;
-                    }
+                const draft = arrowDraftRef.current;
+                const start = draft?.start ?? findClosestAnchor(startPoint);
+                const end = draft?.end ?? findClosestAnchor(currentPoint);
+
+                if (start && 'shapeId' in start) {
+                    startShapeId = start.shapeId;
+                    startAnchor = start.anchor;
                 }
-                // Check if currentPoint (endPoint) is on an anchor
-                for (const tempShape of shapes) {
-                    if (tempShape.type === 'arrow' || tempShape.type === 'text' || tempShape.type === 'pencil') continue;
-                    const anchors = getShapeAnchors(tempShape);
-                    const endHit = anchors.find(a => MathUtils.distance(currentPoint, { x: a.x, y: a.y }) < 15);
-                    if (endHit) {
-                        endShapeId = endHit.shapeId;
-                        endAnchor = endHit.type;
-                        break;
-                    }
+                if (end && 'shapeId' in end) {
+                    endShapeId = end.shapeId;
+                    endAnchor = end.anchor;
                 }
             }
 
@@ -998,7 +1056,7 @@ export const Whiteboard: React.FC = () => {
                     width,
                     height,
                     strokeColor: DEFAULT_STROKE_COLOR,
-                    fillColor: DEFAULT_FILL_COLOR,
+                    fillColor: 'transparent',
                     strokeWidth: DEFAULT_STROKE_WIDTH,
                     strokeStyle: DEFAULT_STROKE_STYLE,
                     startShapeId,
@@ -1017,6 +1075,7 @@ export const Whiteboard: React.FC = () => {
             setStartPoint(null);
             setCurrentPoint(null);
             setFreehandPoints([]);
+            arrowDraftRef.current = null;
         }
     };
 
