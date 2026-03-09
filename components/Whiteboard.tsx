@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { useSession, signIn } from 'next-auth/react';
+import { useSession } from 'next-auth/react';
 import { ZoomIn, ZoomOut, PanelLeftClose, PanelLeftOpen, Plus, Pencil, Check, X, Trash2 } from 'lucide-react';
 import { Toolbar } from './Toolbar';
 import { UserMenu } from './UserMenu';
@@ -63,7 +63,7 @@ const getNextBoardName = (boards: BoardRecord[]): string => {
 
 export const Whiteboard: React.FC = () => {
     // Auth
-    const { data: session, status } = useSession();
+    const { data: session } = useSession();
     
     // State
     const [shapes, setShapes] = useState<Shape[]>([]);
@@ -125,6 +125,11 @@ export const Whiteboard: React.FC = () => {
     const [zoomCursor, setZoomCursor] = useState<'in' | 'out' | null>(null);
     const zoomCursorTimeoutRef = useRef<number | null>(null);
     const [canvasCursor, setCanvasCursor] = useState('default');
+    const isSpacePressedRef = useRef(false);
+
+    const minimapCanvasRef = useRef<HTMLCanvasElement>(null);
+    const minimapTransformRef = useRef<{ scale: number; panX: number; panY: number } | null>(null);
+    const isMinimapDraggingRef = useRef(false);
 
     const styleTools: ToolType[] = ['pencil', 'rectangle', 'circle', 'diamond', 'rounded-rectangle', 'arrow', 'text'];
     const selectedShapes = shapes.filter(shape => selectedShapeIds.includes(shape.id));
@@ -199,6 +204,7 @@ export const Whiteboard: React.FC = () => {
                 : parsedBoards[0].id;
             const initialBoard = parsedBoards.find(board => board.id === defaultActiveBoardId) ?? parsedBoards[0];
 
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setBoards(parsedBoards);
             setActiveBoardId(initialBoard.id);
             setShapes(initialBoard.shapes);
@@ -219,6 +225,7 @@ export const Whiteboard: React.FC = () => {
     // Keep active board shapes synced when drawing changes
     useEffect(() => {
         if (!activeBoardId) return;
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setBoards(prevBoards => {
             const boardIndex = prevBoards.findIndex(board => board.id === activeBoardId);
             if (boardIndex === -1) return prevBoards;
@@ -467,8 +474,50 @@ export const Whiteboard: React.FC = () => {
     }, []);
 
     useEffect(() => {
-        setCanvasCursor(getToolCursor(currentTool));
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setCanvasCursor(isSpacePressedRef.current ? 'grab' : getToolCursor(currentTool));
     }, [currentTool]);
+
+    const canUseSpacePan = useCallback(() => {
+        if (editingText) return false;
+        const active = document.activeElement;
+        if (!active) return true;
+        const tag = active.tagName;
+        if (tag === 'TEXTAREA' || tag === 'INPUT') return false;
+        if (tag === 'BUTTON' || tag === 'A' || tag === 'SELECT' || tag === 'OPTION') return false;
+        if ((active as HTMLElement).isContentEditable) return false;
+        return true;
+    }, [editingText]);
+
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.code !== 'Space') return;
+            if (!canUseSpacePan()) return;
+            if (isSpacePressedRef.current) return;
+            e.preventDefault();
+            isSpacePressedRef.current = true;
+            if (!isPanning && !isDrawing && !isDragging && !isResizing && !selectionBox) {
+                setCanvasCursor('grab');
+            }
+        };
+
+        const handleKeyUp = (e: KeyboardEvent) => {
+            if (e.code !== 'Space') return;
+            if (!isSpacePressedRef.current) return;
+            e.preventDefault();
+            isSpacePressedRef.current = false;
+            if (!isPanning) {
+                setCanvasCursor(getToolCursor(currentTool));
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown, { passive: false });
+        window.addEventListener('keyup', handleKeyUp, { passive: false });
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+            window.removeEventListener('keyup', handleKeyUp);
+        };
+    }, [canUseSpacePan, currentTool, isDrawing, isDragging, isPanning, isResizing, selectionBox]);
 
     // Event Handlers
     const getCanvasPoint = (e: React.PointerEvent<HTMLCanvasElement>): Point => {
@@ -534,7 +583,7 @@ export const Whiteboard: React.FC = () => {
         (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
 
         // Middle click or Space + Drag to pan
-        if (e.button === 1 || e.altKey) {
+        if (e.button === 1 || (e.button === 0 && isSpacePressedRef.current)) {
             setCanvasCursor('grabbing');
             setIsPanning(true);
             setStartPoint({ x: e.clientX, y: e.clientY });
@@ -960,7 +1009,7 @@ export const Whiteboard: React.FC = () => {
         if (isPanning) {
             setIsPanning(false);
             setStartPoint(null);
-            setCanvasCursor(getToolCursor(currentTool));
+            setCanvasCursor(isSpacePressedRef.current ? 'grab' : getToolCursor(currentTool));
             return;
         }
 
@@ -981,7 +1030,7 @@ export const Whiteboard: React.FC = () => {
 
         if (isDragging) {
             setIsDragging(false);
-            setCanvasCursor(getToolCursor(currentTool));
+            setCanvasCursor(isSpacePressedRef.current ? 'grab' : getToolCursor(currentTool));
             saveHistory(shapes); // Commit move
             return;
         }
@@ -1146,6 +1195,143 @@ export const Whiteboard: React.FC = () => {
             });
         }
     };
+
+    const panToWorldPoint = useCallback((world: Point) => {
+        const boardCanvas = canvasRef.current;
+        const rect = boardCanvas?.parentElement?.getBoundingClientRect();
+        if (!rect) return;
+        setPanOffset({
+            x: (rect.width / 2) - (world.x * scale),
+            y: (rect.height / 2) - (world.y * scale),
+        });
+    }, [scale]);
+
+    const getMinimapWorldPoint = useCallback((e: React.PointerEvent<HTMLCanvasElement>): Point | null => {
+        const minimap = minimapCanvasRef.current;
+        const t = minimapTransformRef.current;
+        if (!minimap || !t) return null;
+        const rect = minimap.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        return {
+            x: (x - t.panX) / t.scale,
+            y: (y - t.panY) / t.scale,
+        };
+    }, []);
+
+    const handleMinimapPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+        e.preventDefault();
+        (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
+        isMinimapDraggingRef.current = true;
+        const world = getMinimapWorldPoint(e);
+        if (world) panToWorldPoint(world);
+    };
+
+    const handleMinimapPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+        if (!isMinimapDraggingRef.current) return;
+        const world = getMinimapWorldPoint(e);
+        if (world) panToWorldPoint(world);
+    };
+
+    const handleMinimapPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+        (e.target as HTMLCanvasElement).releasePointerCapture(e.pointerId);
+        isMinimapDraggingRef.current = false;
+    };
+
+    const renderMinimap = useCallback(() => {
+        const minimap = minimapCanvasRef.current;
+        const boardCanvas = canvasRef.current;
+        if (!minimap || !boardCanvas) return;
+        const ctx = minimap.getContext('2d');
+        if (!ctx) return;
+
+        const dpr = window.devicePixelRatio || 1;
+        const rect = minimap.getBoundingClientRect();
+        const boardRect = boardCanvas.parentElement?.getBoundingClientRect();
+        if (!boardRect) return;
+
+        minimap.width = Math.max(1, Math.floor(rect.width * dpr));
+        minimap.height = Math.max(1, Math.floor(rect.height * dpr));
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        ctx.clearRect(0, 0, rect.width, rect.height);
+
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+        ctx.fillRect(0, 0, rect.width, rect.height);
+
+        const viewportWorld = {
+            x: (-panOffset.x) / scale,
+            y: (-panOffset.y) / scale,
+            width: boardRect.width / scale,
+            height: boardRect.height / scale,
+        };
+
+        let minX = viewportWorld.x;
+        let minY = viewportWorld.y;
+        let maxX = viewportWorld.x + viewportWorld.width;
+        let maxY = viewportWorld.y + viewportWorld.height;
+
+        if (shapes.length > 0) {
+            const first = getBoundingBox(shapes[0]);
+            minX = first.minX;
+            minY = first.minY;
+            maxX = first.maxX;
+            maxY = first.maxY;
+
+            for (let i = 1; i < shapes.length; i++) {
+                const b = getBoundingBox(shapes[i]);
+                minX = Math.min(minX, b.minX);
+                minY = Math.min(minY, b.minY);
+                maxX = Math.max(maxX, b.maxX);
+                maxY = Math.max(maxY, b.maxY);
+            }
+
+            minX = Math.min(minX, viewportWorld.x);
+            minY = Math.min(minY, viewportWorld.y);
+            maxX = Math.max(maxX, viewportWorld.x + viewportWorld.width);
+            maxY = Math.max(maxY, viewportWorld.y + viewportWorld.height);
+        }
+
+        const boundsW = Math.max(1, maxX - minX);
+        const boundsH = Math.max(1, maxY - minY);
+        const paddingPx = 10;
+        const usableW = Math.max(1, rect.width - paddingPx * 2);
+        const usableH = Math.max(1, rect.height - paddingPx * 2);
+        const miniScale = Math.min(usableW / boundsW, usableH / boundsH);
+
+        const panX = paddingPx - minX * miniScale;
+        const panY = paddingPx - minY * miniScale;
+        minimapTransformRef.current = { scale: miniScale, panX, panY };
+
+        renderShapes(ctx, shapes, [], miniScale, panX, panY, imageCacheRef.current);
+
+        const vx = panX + viewportWorld.x * miniScale;
+        const vy = panY + viewportWorld.y * miniScale;
+        const vw = viewportWorld.width * miniScale;
+        const vh = viewportWorld.height * miniScale;
+
+        ctx.save();
+        ctx.fillStyle = 'rgba(59, 130, 246, 0.12)';
+        ctx.strokeStyle = 'rgba(59, 130, 246, 0.9)';
+        ctx.lineWidth = 1;
+        ctx.fillRect(vx, vy, vw, vh);
+        ctx.strokeRect(vx, vy, vw, vh);
+        ctx.restore();
+
+        ctx.strokeStyle = 'rgba(17, 24, 39, 0.18)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(0.5, 0.5, rect.width - 1, rect.height - 1);
+    }, [panOffset.x, panOffset.y, scale, shapes, imageCacheVersion]);
+
+    useEffect(() => {
+        requestAnimationFrame(renderMinimap);
+    }, [renderMinimap]);
+
+    useEffect(() => {
+        const handleResize = () => requestAnimationFrame(renderMinimap);
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, [renderMinimap]);
 
     // Text tool commit
     const commitTextEdit = () => {
@@ -1915,11 +2101,23 @@ export const Whiteboard: React.FC = () => {
                     onPointerMove={handlePointerMove}
                     onPointerUp={handlePointerUp}
                     onPointerCancel={handlePointerUp}
-                    onPointerLeave={() => setCanvasCursor(getToolCursor(currentTool))}
+                    onPointerLeave={() => setCanvasCursor(isSpacePressedRef.current ? 'grab' : getToolCursor(currentTool))}
                     onDoubleClick={handleDoubleClick}
                     onWheel={handleWheel}
                     tabIndex={0}
                 />
+
+                <div className={styles.minimap}>
+                    <canvas
+                        ref={minimapCanvasRef}
+                        className={styles.minimapCanvas}
+                        onPointerDown={handleMinimapPointerDown}
+                        onPointerMove={handleMinimapPointerMove}
+                        onPointerUp={handleMinimapPointerUp}
+                        onPointerCancel={handleMinimapPointerUp}
+                        aria-label="Minimap"
+                    />
+                </div>
 
                 {editingText && (
                     <textarea
