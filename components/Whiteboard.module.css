@@ -110,8 +110,9 @@
     position: absolute;
     bottom: max(16px, env(safe-area-inset-bottom));
     right: var(--toolbar-right-reserve);
-    width: 200px;
-    height: 140px;
+    width: clamp(140px, 18vw, 220px);
+    aspect-ratio: 10 / 7;
+    height: auto;
     border-radius: 10px;
     overflow: hidden;
     box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
@@ -552,6 +553,12 @@
         right: 10px;
         bottom: calc(var(--bottom-toolbar-offset) + var(--bottom-toolbar-height) + 16px);
     }
+
+    .minimap {
+        right: 10px;
+        bottom: calc(var(--bottom-toolbar-offset) + var(--bottom-toolbar-height) + 16px + 58px);
+        width: clamp(120px, 28vw, 200px);
+    }
 }
 
 @media (max-width: 900px) {
@@ -621,6 +628,12 @@
         bottom: calc(var(--bottom-toolbar-offset) + var(--bottom-toolbar-height) + 14px);
         padding: 6px;
         gap: 6px;
+    }
+
+    .minimap {
+        right: 8px;
+        bottom: calc(var(--bottom-toolbar-offset) + var(--bottom-toolbar-height) + 14px + 54px);
+        width: clamp(110px, 34vw, 180px);
     }
 }
 
@@ -695,6 +708,13 @@
         gap: 6px;
     }
 
+    .minimap {
+        right: 8px;
+        bottom: calc(var(--bottom-toolbar-offset) + var(--bottom-toolbar-height) + 12px + 52px);
+        width: clamp(104px, 38vw, 160px);
+        border-radius: 9px;
+    }
+
     .zoomBtn {
         width: 26px;
         height: 26px;
@@ -704,6 +724,10 @@
 @media (max-width: 420px) {
     .sidebar {
         width: min(86vw, 300px);
+    }
+
+    .minimap {
+        display: none;
     }
 }
 
