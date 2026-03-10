@@ -374,6 +374,11 @@
 }
 .tableWrap {
   overflow-x: auto;
+  scrollbar-width: none;  /* Firefox */
+  -ms-overflow-style: none;  /* IE and Edge */
+}
+.tableWrap::-webkit-scrollbar {
+  display: none;
 }
 .table {
   width: 100%;
