@@ -77,9 +77,16 @@ function MiniBarChart({
 /* ---------- page ---------- */
 export default function AdminDashboard() {
   const router = useRouter();
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'boards' | 'settings'>('dashboard');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  
+  const [usersList, setUsersList] = useState<RecentUser[]>([]);
+  const [boardsList, setBoardsList] = useState<RecentBoard[]>([]);
+  const [listLoading, setListLoading] = useState(false);
 
   // Auth guard
   useEffect(() => {
@@ -105,9 +112,44 @@ export default function AdminDashboard() {
     }
   }, []);
 
+  const fetchUsers = useCallback(async () => {
+    try {
+      setListLoading(true);
+      const res = await fetch("/api/admin/users");
+      if (res.ok) {
+        const data = await res.json();
+        setUsersList(data);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setListLoading(false);
+    }
+  }, []);
+
+  const fetchBoards = useCallback(async () => {
+    try {
+      setListLoading(true);
+      const res = await fetch("/api/admin/boards");
+      if (res.ok) {
+        const data = await res.json();
+        setBoardsList(data);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setListLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchStats();
   }, [fetchStats]);
+
+  useEffect(() => {
+    if (activeTab === 'users' && usersList.length === 0) fetchUsers();
+    if (activeTab === 'boards' && boardsList.length === 0) fetchBoards();
+  }, [activeTab, fetchUsers, fetchBoards, usersList.length, boardsList.length]);
 
   const handleLogout = () => {
     sessionStorage.removeItem("admin_auth");
@@ -135,8 +177,14 @@ export default function AdminDashboard() {
       <div className={`${styles.orb} ${styles.orb1}`} />
       <div className={`${styles.orb} ${styles.orb2}`} />
 
+      {/* Mobile Overlay */}
+      <div 
+        className={`${styles.sidebarOverlay} ${isSidebarOpen ? styles.open : ''}`} 
+        onClick={() => setIsSidebarOpen(false)}
+      />
+
       {/* Sidebar */}
-      <aside className={styles.sidebar}>
+      <aside className={`${styles.sidebar} ${isSidebarOpen ? styles.open : ''}`}>
         <div className={styles.brand}>
           <div className={styles.brandLogo}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
@@ -145,19 +193,31 @@ export default function AdminDashboard() {
         </div>
 
         <nav className={styles.nav}>
-          <div className={`${styles.navItem} ${styles.navItemActive}`}>
+          <div 
+            className={`${styles.navItem} ${activeTab === 'dashboard' ? styles.navItemActive : ''}`}
+            onClick={() => { setActiveTab('dashboard'); setIsSidebarOpen(false); }}
+          >
             <LayoutIcon />
             Dashboard
           </div>
-          <div className={styles.navItem}>
+          <div 
+            className={`${styles.navItem} ${activeTab === 'users' ? styles.navItemActive : ''}`}
+            onClick={() => { setActiveTab('users'); setIsSidebarOpen(false); }}
+          >
              <UsersIcon />
              Users
           </div>
-          <div className={styles.navItem}>
+          <div 
+            className={`${styles.navItem} ${activeTab === 'boards' ? styles.navItemActive : ''}`}
+            onClick={() => { setActiveTab('boards'); setIsSidebarOpen(false); }}
+          >
              <BoardIcon />
              Boards
           </div>
-          <div className={styles.navItem}>
+          <div 
+            className={`${styles.navItem} ${activeTab === 'settings' ? styles.navItemActive : ''}`}
+            onClick={() => { setActiveTab('settings'); setIsSidebarOpen(false); }}
+          >
              <SettingsIcon />
              Settings
           </div>
@@ -174,9 +234,23 @@ export default function AdminDashboard() {
       {/* Main Content Area */}
       <div className={styles.contentArea}>
         <div className={styles.topBar}>
-            <h2 className={styles.pageHeaderTitle}>Overview</h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <button className={styles.menuBtn} onClick={() => setIsSidebarOpen(true)}>
+                    <MenuIcon />
+                </button>
+                <h2 className={styles.pageHeaderTitle}>
+                    {activeTab === 'dashboard' && 'Overview'}
+                    {activeTab === 'users' && 'Users Management'}
+                    {activeTab === 'boards' && 'Values & Boards'}
+                    {activeTab === 'settings' && 'System Settings'}
+                </h2>
+            </div>
             <div className={styles.topActions}>
-                <button className={styles.refreshBtn} onClick={fetchStats} title="Refresh Data">
+                <button className={styles.refreshBtn} onClick={() => {
+                    if (activeTab === 'dashboard') fetchStats();
+                    if (activeTab === 'users') fetchUsers();
+                    if (activeTab === 'boards') fetchBoards();
+                }} title="Refresh Data">
                     <RefreshIcon />
                 </button>
                 <div className={styles.avatarFallback} style={{ width: 36, height: 36, background: '#1e1e24', color: '#fff', border: '1px solid #333' }}>
@@ -186,16 +260,16 @@ export default function AdminDashboard() {
         </div>
 
         <main className={styles.main}>
-            {loading && !stats && (
+            {loading && (
             <div className={styles.loaderWrap}>
                 <div className={styles.spinner} />
-                <p className={styles.loaderText}>Loading analytics…</p>
+                <p className={styles.loaderText}>Loading data…</p>
             </div>
             )}
 
             {error && <p className={styles.errorText}>{error}</p>}
 
-            {stats && (
+            {!loading && activeTab === 'dashboard' && stats && (
             <>
                 {/* Stat cards */}
                 <section className={styles.statGrid}>
@@ -348,6 +422,94 @@ export default function AdminDashboard() {
                 </section>
             </>
             )}
+
+            {!loading && activeTab === 'users' && (
+                <div className={styles.tableCard} style={{ gridColumn: '1 / -1' }}>
+                    <div className={styles.tableWrap}>
+                    <table className={styles.table}>
+                        <thead>
+                        <tr>
+                            <th>User</th>
+                            <th>Email</th>
+                            <th>Boards Count</th>
+                            <th>Date Joined</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {usersList.map((u) => (
+                            <tr key={u.id}>
+                            <td>
+                                <div className={styles.userCell}>
+                                {u.image ? (
+                                    <Image
+                                    src={u.image}
+                                    alt=""
+                                    width={28}
+                                    height={28}
+                                    className={styles.avatar}
+                                    />
+                                ) : (
+                                    <div className={styles.avatarFallback}>
+                                    {(u.name || u.email || "?")[0].toUpperCase()}
+                                    </div>
+                                )}
+                                <span>{u.name || "—"}</span>
+                                </div>
+                            </td>
+                            <td className={styles.mutedCell}>{u.email || "—"}</td>
+                            <td className={styles.mutedCell}>{u._count?.boards || 0}</td>
+                            <td className={styles.mutedCell}>{new Date(u.createdAt).toLocaleDateString()}</td>
+                            </tr>
+                        ))}
+                        {usersList.length === 0 && (
+                            <tr><td colSpan={4} className={styles.emptyCell}>No users found.</td></tr>
+                        )}
+                        </tbody>
+                    </table>
+                    </div>
+                </div>
+            )}
+
+            {!loading && activeTab === 'boards' && (
+                <div className={styles.tableCard} style={{ gridColumn: '1 / -1' }}>
+                    <div className={styles.tableWrap}>
+                    <table className={styles.table}>
+                        <thead>
+                        <tr>
+                            <th>Board Name</th>
+                            <th>Owner</th>
+                            <th>Created At</th>
+                            <th>Updated At</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {boardsList.map((b) => (
+                            <tr key={b.id}>
+                            <td>{b.name || "Untitled"}</td>
+                            <td>
+                                <div className={styles.userCell}>
+                                    <span>{b.user?.name || b.user?.email || "Unknown"}</span>
+                                </div>
+                            </td>
+                            <td className={styles.mutedCell}>{new Date(b.createdAt).toLocaleDateString()}</td>
+                            <td className={styles.mutedCell}>{timeAgo(b.updatedAt)}</td>
+                            </tr>
+                        ))}
+                        {boardsList.length === 0 && (
+                            <tr><td colSpan={4} className={styles.emptyCell}>No boards found.</td></tr>
+                        )}
+                        </tbody>
+                    </table>
+                    </div>
+                </div>
+            )}
+
+            {!loading && activeTab === 'settings' && (
+                <div className={styles.tableCard} style={{ gridColumn: '1 / -1', padding: '24px' }}>
+                    <h3>System Settings</h3>
+                    <p style={{ color: '#aaa', marginTop: 10 }}>Global application settings will appear here.</p>
+                </div>
+            )}
         </main>
       </div>
     </div>
@@ -425,5 +587,11 @@ function LogOutIcon() {
 function RefreshIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10" /><path d="M20.49 15a9 9 0 0 1-14.85 3.36L1 14" /></svg>
+  );
+}
+
+function MenuIcon() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
   );
 }
