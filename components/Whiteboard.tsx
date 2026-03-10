@@ -1136,9 +1136,7 @@ export const Whiteboard: React.FC = () => {
                 setSelectedShapeIds([newShape.id]);
 
                 // Reset tool to pointer unless holding shift (not implemented yet) or continuous drawing desired
-                if (currentTool !== 'arrow' && currentTool !== 'elbow-arrow' && currentTool !== 'curve-arrow') {
-                     setCurrentTool('pointer');
-                }
+                setCurrentTool('pointer');
             }
             setIsDrawing(false);
             setStartPoint(null);
