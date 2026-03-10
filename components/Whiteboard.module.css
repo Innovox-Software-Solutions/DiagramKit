@@ -55,7 +55,8 @@
 .canvas.tool-circle,
 .canvas.tool-diamond,
 .canvas.tool-rounded-rectangle,
-.canvas.tool-arrow {
+.canvas.tool-arrow,
+.canvas.tool-elbow-arrow {
     cursor: crosshair;
 }
 

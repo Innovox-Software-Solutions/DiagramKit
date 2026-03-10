@@ -38,6 +38,7 @@ const getToolCursor = (tool: ToolType): string => {
     if (tool === 'text') return 'text';
     if (tool === 'delete') return 'not-allowed';
     if (tool === 'pointer') return 'default';
+    if (tool === 'elbow-arrow') return 'crosshair';
     return 'crosshair';
 };
 

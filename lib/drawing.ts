@@ -37,6 +37,7 @@ const getPencilAbsolutePoints = (shape: Shape): Point[] => {
 
 
 // Render shapes on the canvas
+
 export const renderShapes = (
     ctx: CanvasRenderingContext2D,
     shapes: Shape[],
@@ -68,7 +69,7 @@ export const renderShapes = (
 
         ctx.beginPath();
 
-            switch (shape.type) {
+        switch (shape.type) {
             case "rectangle":
                 ctx.rect(shape.x, shape.y, shape.width, shape.height);
                 if (shape.fillColor !== "transparent") ctx.fill();
@@ -98,6 +99,7 @@ export const renderShapes = (
                 break;
 
             case "arrow":
+            case "elbow-arrow":
                 let fromX = shape.x;
                 let fromY = shape.y;
                 let toX = shape.x + shape.width;
@@ -126,10 +128,51 @@ export const renderShapes = (
                         }
                     }
                 }
+                
+                if (shape.type === "elbow-arrow") {
+                    // Custom implementation for elbow arrow
+                    // The function is currently defined locally above but let's inline or use helper
+                    // Since drawElbowArrow is defined above but needs to be accessible in this scope if defined inside renderShapes?
+                    // Actually, drawElbowArrow is defined outside, so it should be fine.
+                    // But I need to adjust `drawElbowArrow` to actually work correctly first.
+                    
+                    // Simple Z-turn logic:
+                    const midX = (fromX + toX) / 2;
+                    const cornerRadius = 8;
+                    const headlen = 10;
+                    
+                    // Start point visual: Circle
+                    ctx.beginPath();
+                    ctx.fillStyle = ctx.strokeStyle; 
+                    ctx.arc(fromX, fromY, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(fromX, fromY);
+                    
+                    // If simply drawing Z shape:
+                    // fromX,fromY -> midX,fromY -> midX,toY -> toX,toY
+                    ctx.lineTo(midX - (midX > fromX ? cornerRadius : -cornerRadius), fromY);
+                    ctx.quadraticCurveTo(midX, fromY, midX, fromY + (toY > fromY ? cornerRadius : -cornerRadius));
+                    ctx.lineTo(midX, toY - (toY > fromY ? cornerRadius : -cornerRadius));
+                    ctx.quadraticCurveTo(midX, toY, midX + (toX > midX ? cornerRadius : -cornerRadius), toY);
+                    ctx.lineTo(toX, toY);
+                    ctx.stroke();
 
-                drawArrow(ctx, fromX, fromY, toX, toY);
-                if (shape.fillColor !== "transparent") ctx.fill();
-                ctx.stroke();
+                    // Arrow Head at end
+                    const angle = Math.atan2(0, toX - midX); // Approaching horizontally
+                    ctx.beginPath();
+                    ctx.moveTo(toX, toY);
+                    ctx.lineTo(toX - headlen * Math.cos(angle - Math.PI / 6), toY - headlen * Math.sin(angle - Math.PI / 6));
+                    ctx.lineTo(toX - headlen * Math.cos(angle + Math.PI / 6), toY - headlen * Math.sin(angle + Math.PI / 6));
+                    ctx.closePath();
+                    ctx.fillStyle = ctx.strokeStyle;
+                    ctx.fill();
+                } else {
+                    drawArrow(ctx, fromX, fromY, toX, toY);
+                    if (shape.fillColor !== "transparent") ctx.fill();
+                    ctx.stroke();
+                }
                 break;
 
             case "text":
@@ -250,16 +293,90 @@ const drawAnchors = (ctx: CanvasRenderingContext2D, shape: Shape) => {
 };
 
 const drawArrow = (ctx: CanvasRenderingContext2D, fromX: number, fromY: number, toX: number, toY: number) => {
+    
     const headlen = 10; // length of head in pixels
     const dx = toX - fromX;
     const dy = toY - fromY;
     const angle = Math.atan2(dy, dx);
-
     ctx.moveTo(fromX, fromY);
     ctx.lineTo(toX, toY);
     ctx.lineTo(toX - headlen * Math.cos(angle - Math.PI / 6), toY - headlen * Math.sin(angle - Math.PI / 6));
     ctx.moveTo(toX, toY);
     ctx.lineTo(toX - headlen * Math.cos(angle + Math.PI / 6), toY - headlen * Math.sin(angle + Math.PI / 6));
+};
+
+const drawElbowArrow = (ctx: CanvasRenderingContext2D, fromX: number, fromY: number, toX: number, toY: number) => {
+    const headlen = 10;
+    const cornerRadius = 8; // Radius for rounded corners
+
+    // Calculate midpoints
+    const midX = (fromX + toX) / 2;
+    // We can choose to break horizontally or vertically depending on the shape positions.
+    // For simplicity, let's start with a horizontal-first approach if horizontal distance is greater
+    // or just a simple midpoint break.
+    // A common simple elbow logic is: horizontal then vertical
+    
+    // Let's implement a standard 3-segment elbow:
+    // 1. Horizontal from start
+    // 2. Vertical segment
+    // 3. Horizontal to end
+    // Or Vertical -> Horizontal -> Vertical based on dominance.
+
+    // Simple robust approach for now:
+    // Move horizontal to midpoint X, then vertical to target Y, then horizontal to target X?
+    // Let's stick to the double-L (Z-shape) or simple L shape.
+    // The user requested a specific type in the image attachments which looks like a Z-shape with rounded corners.
+    // Left-to-right flow:
+    // Start -> (midX, startY) -> (midX, endY) -> End
+
+    let p1 = { x: fromX, y: fromY };
+    let p2 = { x: midX, y: fromY };
+    let p3 = { x: midX, y: toY };
+    let p4 = { x: toX, y: toY };
+
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+    
+    // Draw line to p2 (start of first cure)
+    // To make it rounded, we stop short of p2 and curve to p3
+    
+    // Use arcTo for rounded corners
+    ctx.lineTo(p2.x, p2.y); // This might be sharp, let's try arcTo
+    // We need to trace the path: p1 -> p2 -> p3 -> p4
+    
+    // Reset path to be clean
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+    
+    // First corner at p2
+    ctx.arcTo(p2.x, p2.y, p3.x, p3.y, cornerRadius);
+    
+    // Second corner at p3
+    ctx.arcTo(p3.x, p3.y, p4.x, p4.y, cornerRadius);
+    
+    // Line to end
+    ctx.lineTo(p4.x, p4.y);
+    ctx.stroke();
+
+    // Draw Arrow Head at p4
+    // Direction is determined by p3 -> p4 vector
+    const dx = p4.x - p3.x;
+    const dy = p4.y - p3.y;
+    const angle = Math.atan2(dy, dx);
+    
+    ctx.beginPath();
+    ctx.moveTo(toX, toY);
+    ctx.lineTo(toX - headlen * Math.cos(angle - Math.PI / 6), toY - headlen * Math.sin(angle - Math.PI / 6));
+    ctx.moveTo(toX, toY);
+    ctx.lineTo(toX - headlen * Math.cos(angle + Math.PI / 6), toY - headlen * Math.sin(angle + Math.PI / 6));
+    ctx.stroke();
+    
+    // Also draw a starting circle dot as per the user image
+    ctx.beginPath();
+    ctx.arc(fromX, fromY, 4, 0, Math.PI * 2);
+    ctx.fillStyle = ctx.strokeStyle; 
+    ctx.fill();
+    // Revert fill style for subsequent strokes if needed, though this function is called inside a context loop that sets styles
 };
 
 const drawSelectionBox = (ctx: CanvasRenderingContext2D, shape: Shape, showHandles: boolean = true) => {
