@@ -1,6 +1,6 @@
 .container {
     --ui-gap: clamp(10px, 1.4vw, 16px);
-    --floating-top: max(64px, calc(env(safe-area-inset-top) + 56px));
+    --floating-top: max(92px, calc(env(safe-area-inset-top) + 84px));
     --boards-sidebar-width: clamp(280px, 26vw, 320px);
     --style-sidebar-width: clamp(272px, 24vw, 304px);
     --toolbar-left-reserve: calc(var(--ui-gap) + 52px);
@@ -23,7 +23,8 @@
 }
 
 .withStyleSidebar {
-    --toolbar-right-reserve: calc(var(--ui-gap) + var(--style-sidebar-width) + 14px);
+    /* Keep toolbar in same position when style sidebar opens - no shifting */
+    --toolbar-right-reserve: var(--ui-gap);
 }
 
 .canvasContainer {
@@ -43,6 +44,8 @@
     height: 100%;
     outline: none;
     touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 /* Specific cursors based on active tool */
@@ -50,12 +53,17 @@
     cursor: default;
 }
 
+.canvas.tool-hand {
+    cursor: grab;
+}
+
 .canvas.tool-rectangle,
 .canvas.tool-pencil,
 .canvas.tool-circle,
 .canvas.tool-diamond,
 .canvas.tool-rounded-rectangle,
-.canvas.tool-arrow {
+.canvas.tool-arrow,
+.canvas.tool-elbow-arrow {
     cursor: crosshair;
 }
 
@@ -80,7 +88,7 @@
     background: transparent;
     border: 1px dashed #0d6efd;
     outline: none;
-    font-family: sans-serif;
+    font-family: var(--font-lobster-two), cursive, sans-serif;
     font-size: 16px;
     line-height: 1;
     color: #000;
@@ -93,7 +101,7 @@
 }
 
 .zoomControls {
-    position: absolute;
+    position: fixed;
     bottom: max(16px, env(safe-area-inset-bottom));
     left: var(--ui-gap);
     display: flex;
@@ -104,6 +112,31 @@
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     z-index: 100;
     align-items: center;
+}
+
+.minimap {
+    position: fixed;
+    bottom: max(16px, env(safe-area-inset-bottom));
+    right: var(--ui-gap);
+    width: clamp(140px, 18vw, 220px);
+    aspect-ratio: 10 / 7;
+    height: auto;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+    z-index: 110;
+    border: 1px solid rgba(17, 24, 39, 0.12);
+    background: rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(6px);
+    transition: none;
+}
+
+.minimapCanvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+    touch-action: none;
+    cursor: pointer;
 }
 
 .zoomBtn {
@@ -132,7 +165,7 @@
 }
 
 .sidebarToggle {
-    position: absolute;
+    position: fixed;
     top: max(16px, calc(env(safe-area-inset-top) + 8px));
     left: var(--ui-gap);
     z-index: 130;
@@ -154,7 +187,7 @@
 }
 
 .userMenuContainer {
-    position: absolute;
+    position: fixed;
     top: max(16px, calc(env(safe-area-inset-top) + 8px));
     right: 16px;
     z-index: 130;
@@ -165,7 +198,7 @@
 }
 
 .sidebar {
-    position: absolute;
+    position: fixed;
     top: var(--floating-top);
     left: var(--ui-gap);
     z-index: 120;
@@ -311,13 +344,13 @@
 }
 
 .styleSidebar {
-    position: absolute;
-    top: var(--floating-top);
+    position: fixed;
+    top: calc(var(--floating-top) + 60px); /* Position below toolbar */
     right: var(--ui-gap);
     z-index: 120;
     width: var(--style-sidebar-width);
     max-width: calc(100vw - (var(--ui-gap) * 2));
-    max-height: calc(100dvh - var(--floating-top) - var(--ui-gap));
+    max-height: calc(100dvh - var(--floating-top) - 120px);
     overflow-y: auto;
     background: #ffffff;
     border: 1px solid #e5e7eb;
@@ -514,6 +547,7 @@
     }
 
     .styleSidebar {
+        position: fixed;
         left: 10px;
         right: 10px;
         width: auto;
@@ -521,13 +555,28 @@
         bottom: calc(var(--bottom-toolbar-offset) + var(--bottom-toolbar-height) + 12px);
         max-height: min(42dvh, 380px);
         border-radius: 14px;
+        z-index: 210;
     }
 
     .zoomControls {
+        position: fixed;
         top: auto;
         left: auto;
         right: 10px;
         bottom: calc(var(--bottom-toolbar-offset) + var(--bottom-toolbar-height) + 16px);
+        z-index: 190;
+    }
+
+    .minimap {
+        position: fixed;
+        right: 10px;
+        bottom: calc(var(--bottom-toolbar-offset) + var(--bottom-toolbar-height) + 16px + 58px);
+        width: clamp(120px, 28vw, 200px);
+        z-index: 150;
+    }
+
+    .withStyleSidebar .minimap {
+        bottom: calc(var(--bottom-toolbar-offset) + var(--bottom-toolbar-height) + 16px + 58px + min(42dvh, 380px) + 12px);
     }
 }
 
@@ -598,6 +647,16 @@
         bottom: calc(var(--bottom-toolbar-offset) + var(--bottom-toolbar-height) + 14px);
         padding: 6px;
         gap: 6px;
+    }
+
+    .minimap {
+        right: 8px;
+        bottom: calc(var(--bottom-toolbar-offset) + var(--bottom-toolbar-height) + 14px + 54px);
+        width: clamp(110px, 34vw, 180px);
+    }
+
+    .withStyleSidebar .minimap {
+        bottom: calc(var(--bottom-toolbar-offset) + var(--bottom-toolbar-height) + 14px + 54px + min(40dvh, 360px) + 8px);
     }
 }
 
@@ -672,9 +731,26 @@
         gap: 6px;
     }
 
+    .minimap {
+        right: 8px;
+        bottom: calc(var(--bottom-toolbar-offset) + var(--bottom-toolbar-height) + 12px + 52px);
+        width: clamp(104px, 38vw, 160px);
+        border-radius: 9px;
+    }
+
+    .withStyleSidebar .minimap {
+        bottom: calc(var(--bottom-toolbar-offset) + var(--bottom-toolbar-height) + 12px + 52px + min(38dvh, 320px) + 8px);
+    }
+
     .zoomBtn {
         width: 26px;
         height: 26px;
+    }
+}
+
+@media (max-width: 480px) {
+    .minimap {
+        display: none;
     }
 }
 

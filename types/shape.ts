@@ -1,4 +1,4 @@
-export type ShapeType = "rectangle" | "circle" | "arrow" | "diamond" | "text" | "rounded-rectangle" | "image" | "pencil";
+export type ShapeType = "rectangle" | "circle" | "arrow" | "elbow-arrow" | "curve-arrow" | "diamond" | "text" | "rounded-rectangle" | "image" | "pencil";
 
 export type AnchorType = "top" | "bottom" | "left" | "right" | "center";
 export type StrokeStyle = "solid" | "dashed" | "dotted";
@@ -16,6 +16,11 @@ export interface Shape {
     strokeStyle?: StrokeStyle;
     text?: string;
     fontSize?: number;
+    fontFamily?: string;
+    fontWeight?: string;
+    fontStyle?: string;
+    textDecoration?: string;
+    textAlign?: "left" | "center" | "right";
 
     // Arrow specific
     startShapeId?: string;
@@ -34,7 +39,7 @@ export interface Shape {
     points?: Point[];
 }
 
-export type ToolType = "pointer" | "pencil" | "rectangle" | "circle" | "arrow" | "diamond" | "text" | "rounded-rectangle" | "delete";
+export type ToolType = "pointer" | "pencil" | "rectangle" | "circle" | "arrow" | "elbow-arrow" | "curve-arrow" | "diamond" | "text" | "rounded-rectangle" | "delete" | "hand";
 
 export interface Point {
     x: number;

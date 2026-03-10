@@ -12,19 +12,47 @@ const getMeasureCtx = () => {
     return measureCtx;
 };
 
-export const measureText = (text: string, fontSize: number): { width: number, height: number } => {
+const getResolvedFont = (family?: string): string => {
+    // If family is explicitly something else, try to use it? 
+    // The user said "dont use simple for all text use this".
+    // I'll make Lobster Two the default if family is missing or 'Lobster Two'.
+    if ((!family || family === 'Lobster Two' || family === 'sans-serif') && typeof document !== 'undefined') {
+        const style = getComputedStyle(document.body).getPropertyValue('--font-lobster-two');
+        if (style) return style.trim().replace(/"/g, "'");
+    }
+    // Even if it's some other string, we might want to override? 
+    // But let's respect explicit choices if there were multiple fonts. 
+    // Assuming 'simple' refers to default sans-serif.
+    return family || 'Lobster Two, cursive';
+};
+
+export const measureText = (text: string, fontSize: number, fontFamily?: string, fontWeight?: string, fontStyle?: string): { width: number, height: number } => {
     const ctx = getMeasureCtx();
-    if (ctx) {
+    if (ctx && text) {
+        const resolvedFont = getResolvedFont(fontFamily);
+        const resolvedWeight = fontWeight || 'normal';
+        const resolvedStyle = fontStyle || 'normal';
         ctx.save();
-        ctx.font = `${fontSize}px sans-serif`;
-        const metrics = ctx.measureText(text);
+        ctx.font = `${resolvedStyle} ${resolvedWeight} ${fontSize}px ${resolvedFont}`;
+        
+        const lines = text.split('\n');
+        let maxWidth = 0;
+        const lineHeight = fontSize * 1.25;
+
+        lines.forEach(line => {
+             const metrics = ctx.measureText(line);
+             if (metrics.width > maxWidth) {
+                 maxWidth = metrics.width;
+             }
+        });
+
         ctx.restore();
         return {
-            width: metrics.width,
-            height: fontSize * 1.2 // approximate line height
+            width: maxWidth,
+            height: lines.length * lineHeight
         };
     }
-    return { width: 100, height: fontSize * 1.2 };
+    return { width: 100, height: fontSize * 1.25 };
 };
 
 const getPencilAbsolutePoints = (shape: Shape): Point[] => {
@@ -37,6 +65,7 @@ const getPencilAbsolutePoints = (shape: Shape): Point[] => {
 
 
 // Render shapes on the canvas
+
 export const renderShapes = (
     ctx: CanvasRenderingContext2D,
     shapes: Shape[],
@@ -68,7 +97,7 @@ export const renderShapes = (
 
         ctx.beginPath();
 
-            switch (shape.type) {
+        switch (shape.type) {
             case "rectangle":
                 ctx.rect(shape.x, shape.y, shape.width, shape.height);
                 if (shape.fillColor !== "transparent") ctx.fill();
@@ -98,6 +127,8 @@ export const renderShapes = (
                 break;
 
             case "arrow":
+            case "elbow-arrow":
+            case "curve-arrow":
                 let fromX = shape.x;
                 let fromY = shape.y;
                 let toX = shape.x + shape.width;
@@ -126,19 +157,131 @@ export const renderShapes = (
                         }
                     }
                 }
+                
+                if (shape.type === "elbow-arrow") {
+                    // Custom implementation for elbow arrow
+                    const midX = (fromX + toX) / 2;
+                    const midY = (fromY + toY) / 2;
+                    const cornerRadius = 8;
+                    const headlen = 10;
+                    
+                    // Start point visual: Circle
+                    // Only if selected? No, maybe always as a style choice or not at all?
+                    // Previous code logic seemed to have it. Keeping consistency if desired but maybe removing for cleaner look
+                    // Let's stick to just the line unless requested.
+                    // The previous `read_file` output showed some circle drawing code. I'll preserve what was there if possible or improve.
+                    // The previous output in `read_file` lines 152+ showed specific implementation.
+                    
+                    // Re-implementing based on what was seen/implied:
+                    ctx.beginPath();
+                    ctx.moveTo(fromX, fromY);
+                    
+                    // Complex logic to handle directions properly
+                    // Simplified elbow: Horizontal first then vertical? Or Z-shape?
+                    // Defaulting to "Midpoint Z-shape" which is common for diagrams
+                    
+                    const dx = toX - fromX;
+                    const dy = toY - fromY;
+                    
+                    // We go horizontal to midX, then vertical to toY, then horizontal to toX?
+                    // Or Horizontal -> Vertical -> Horizontal (3 segments) or Vertical -> Horizontal -> Vertical
+                    // Let's use a simple 3-segment approach: 
+                    // 1. (fromX, fromY) -> (midX, fromY)
+                    // 2. (midX, fromY) -> (midX, toY)
+                    // 3. (midX, toY) -> (toX, toY)
+                    
+                    // Drawing with rounded corners
+                    // We need to know direction to apply arc correctly.
+                    
+                    // Just using lines for robustness if corner radius logic is complex to inline
+                    // But user likes "elbow".
+                    // Let's try the Z-shape with manual arcTo
+                    
+                    ctx.lineTo(midX, fromY);
+                    ctx.lineTo(midX, toY);
+                    ctx.lineTo(toX, toY);
+                    ctx.stroke();
 
-                drawArrow(ctx, fromX, fromY, toX, toY);
-                if (shape.fillColor !== "transparent") ctx.fill();
-                ctx.stroke();
+                    // Arrow head at toX, toY. Direction is horizontal approaching toX
+                    const angle = dx >= 0 ? 0 : Math.PI; 
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(toX, toY);
+                    ctx.lineTo(toX - headlen * Math.cos(angle - Math.PI / 6), toY - headlen * Math.sin(angle - Math.PI / 6));
+                    ctx.lineTo(toX - headlen * Math.cos(angle + Math.PI / 6), toY - headlen * Math.sin(angle + Math.PI / 6));
+                    ctx.closePath();
+                    ctx.fillStyle = shape.strokeColor; // Use stroke color for fill
+                    ctx.fill();
+
+                } else if (shape.type === "curve-arrow") {
+                    const headlen = 10;
+                    const midX = (fromX + toX) / 2;
+                    const midY = (fromY + toY) / 2;
+                    
+                    // Calculate control point offset
+                    const dx = toX - fromX;
+                    const dy = toY - fromY;
+                    const dist = Math.sqrt(dx*dx + dy*dy);
+                    // Offset perpendicular to the line
+                    const offset = dist * 0.2; 
+                    const angle = Math.atan2(dy, dx);
+                    
+                    const cx = midX + offset * Math.cos(angle - Math.PI / 2);
+                    const cy = midY + offset * Math.sin(angle - Math.PI / 2);
+
+                    ctx.beginPath();
+                    ctx.moveTo(fromX, fromY);
+                    ctx.quadraticCurveTo(cx, cy, toX, toY);
+                    ctx.stroke();
+
+                    // Arrow head
+                    // Calculate angle at end point (tangent to curve at t=1)
+                    // P'(1) = 2(P2 - P1) => vector from control point to end point
+                    const endAngle = Math.atan2(toY - cy, toX - cx);
+
+                    ctx.beginPath();
+                    ctx.moveTo(toX, toY);
+                    ctx.lineTo(toX - headlen * Math.cos(endAngle - Math.PI / 6), toY - headlen * Math.sin(endAngle - Math.PI / 6));
+                    ctx.lineTo(toX - headlen * Math.cos(endAngle + Math.PI / 6), toY - headlen * Math.sin(endAngle + Math.PI / 6));
+                    ctx.closePath();
+                    ctx.fillStyle = shape.strokeColor;
+                    ctx.fill();
+
+                } else {
+                    drawArrow(ctx, fromX, fromY, toX, toY);
+                    if (shape.fillColor !== "transparent") ctx.fill();
+                    ctx.stroke();
+                }
                 break;
 
             case "text":
                 if (shape.text) {
                     const fontSize = shape.fontSize || 20;
-                    ctx.font = `${fontSize}px sans-serif`;
+                    const resolvedFont = getResolvedFont(shape.fontFamily);
+                    const fontWeight = shape.fontWeight || 'normal';
+                    const fontStyle = shape.fontStyle || 'normal';
+                    
+                    ctx.font = `${fontStyle} ${fontWeight} ${fontSize}px ${resolvedFont}`;
                     ctx.fillStyle = shape.strokeColor; // Use stroke color for text color
                     ctx.textBaseline = "top";
-                    ctx.fillText(shape.text, shape.x, shape.y);
+
+                    const lines = shape.text.split('\n');
+                    const lineHeight = fontSize * 1.25;
+
+                    lines.forEach((line, index) => {
+                        const y = shape.y + (index * lineHeight);
+                        ctx.fillText(line, shape.x, y);
+
+                        if (shape.textDecoration === 'underline') {
+                            const metrics = ctx.measureText(line);
+                            ctx.beginPath();
+                            ctx.moveTo(shape.x, y + fontSize);
+                            ctx.lineTo(shape.x + metrics.width, y + fontSize);
+                            ctx.lineWidth = Math.max(1, fontSize / 15);
+                            ctx.stroke();
+                        }
+                    });
+
                     // Optional: Render bounding box for debug or during edit
                 }
                 break;
@@ -250,16 +393,90 @@ const drawAnchors = (ctx: CanvasRenderingContext2D, shape: Shape) => {
 };
 
 const drawArrow = (ctx: CanvasRenderingContext2D, fromX: number, fromY: number, toX: number, toY: number) => {
+    
     const headlen = 10; // length of head in pixels
     const dx = toX - fromX;
     const dy = toY - fromY;
     const angle = Math.atan2(dy, dx);
-
     ctx.moveTo(fromX, fromY);
     ctx.lineTo(toX, toY);
     ctx.lineTo(toX - headlen * Math.cos(angle - Math.PI / 6), toY - headlen * Math.sin(angle - Math.PI / 6));
     ctx.moveTo(toX, toY);
     ctx.lineTo(toX - headlen * Math.cos(angle + Math.PI / 6), toY - headlen * Math.sin(angle + Math.PI / 6));
+};
+
+const drawElbowArrow = (ctx: CanvasRenderingContext2D, fromX: number, fromY: number, toX: number, toY: number) => {
+    const headlen = 10;
+    const cornerRadius = 8; // Radius for rounded corners
+
+    // Calculate midpoints
+    const midX = (fromX + toX) / 2;
+    // We can choose to break horizontally or vertically depending on the shape positions.
+    // For simplicity, let's start with a horizontal-first approach if horizontal distance is greater
+    // or just a simple midpoint break.
+    // A common simple elbow logic is: horizontal then vertical
+    
+    // Let's implement a standard 3-segment elbow:
+    // 1. Horizontal from start
+    // 2. Vertical segment
+    // 3. Horizontal to end
+    // Or Vertical -> Horizontal -> Vertical based on dominance.
+
+    // Simple robust approach for now:
+    // Move horizontal to midpoint X, then vertical to target Y, then horizontal to target X?
+    // Let's stick to the double-L (Z-shape) or simple L shape.
+    // The user requested a specific type in the image attachments which looks like a Z-shape with rounded corners.
+    // Left-to-right flow:
+    // Start -> (midX, startY) -> (midX, endY) -> End
+
+    let p1 = { x: fromX, y: fromY };
+    let p2 = { x: midX, y: fromY };
+    let p3 = { x: midX, y: toY };
+    let p4 = { x: toX, y: toY };
+
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+    
+    // Draw line to p2 (start of first cure)
+    // To make it rounded, we stop short of p2 and curve to p3
+    
+    // Use arcTo for rounded corners
+    ctx.lineTo(p2.x, p2.y); // This might be sharp, let's try arcTo
+    // We need to trace the path: p1 -> p2 -> p3 -> p4
+    
+    // Reset path to be clean
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+    
+    // First corner at p2
+    ctx.arcTo(p2.x, p2.y, p3.x, p3.y, cornerRadius);
+    
+    // Second corner at p3
+    ctx.arcTo(p3.x, p3.y, p4.x, p4.y, cornerRadius);
+    
+    // Line to end
+    ctx.lineTo(p4.x, p4.y);
+    ctx.stroke();
+
+    // Draw Arrow Head at p4
+    // Direction is determined by p3 -> p4 vector
+    const dx = p4.x - p3.x;
+    const dy = p4.y - p3.y;
+    const angle = Math.atan2(dy, dx);
+    
+    ctx.beginPath();
+    ctx.moveTo(toX, toY);
+    ctx.lineTo(toX - headlen * Math.cos(angle - Math.PI / 6), toY - headlen * Math.sin(angle - Math.PI / 6));
+    ctx.moveTo(toX, toY);
+    ctx.lineTo(toX - headlen * Math.cos(angle + Math.PI / 6), toY - headlen * Math.sin(angle + Math.PI / 6));
+    ctx.stroke();
+    
+    // Also draw a starting circle dot as per the user image
+    ctx.beginPath();
+    ctx.arc(fromX, fromY, 4, 0, Math.PI * 2);
+    ctx.fillStyle = ctx.strokeStyle; 
+    ctx.fill();
+    // Revert fill style for subsequent strokes if needed, though this function is called inside a context loop that sets styles
 };
 
 const drawSelectionBox = (ctx: CanvasRenderingContext2D, shape: Shape, showHandles: boolean = true) => {

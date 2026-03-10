@@ -1,5 +1,5 @@
 .toolbar {
-  position: absolute;
+  position: fixed;
   top: max(16px, calc(env(safe-area-inset-top) + 8px));
   left: calc(50% + ((var(--toolbar-left-reserve, 0px) - var(--toolbar-right-reserve, 0px)) / 2));
   transform: translateX(-50%);
@@ -107,12 +107,13 @@
 
 @media (max-width: 1024px) {
   .toolbar {
+    position: fixed;
     top: auto;
-    bottom: var(--bottom-toolbar-offset, max(8px, env(safe-area-inset-bottom)));
+    bottom: var(--bottom-toolbar-offset, max(16px, env(safe-area-inset-bottom)));
     left: 50%;
     transform: translateX(-50%);
     width: max-content;
-    max-width: calc(100vw - 20px);
+    max-width: calc(100vw - 32px);
     min-width: 0;
     justify-content: flex-start;
     flex-wrap: nowrap;
@@ -122,6 +123,7 @@
     gap: 6px;
     padding: 6px;
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+    z-index: 200;
   }
 
   .iconButton {

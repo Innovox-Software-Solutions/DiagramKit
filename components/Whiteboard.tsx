@@ -2,14 +2,14 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { useSession, signIn } from 'next-auth/react';
+import { useSession } from 'next-auth/react';
 import { ZoomIn, ZoomOut, PanelLeftClose, PanelLeftOpen, Plus, Pencil, Check, X, Trash2 } from 'lucide-react';
 import { Toolbar } from './Toolbar';
 import { UserMenu } from './UserMenu';
 import { AuthModal } from './AuthModal';
 import { ExportModal, ExportOptions } from './ExportModal';
-import { Shape, ToolType, Point, AnchorType, StrokeStyle } from '@/types/shape';
-import { renderShapes, hitTest, hitTestHandle, getShapeAnchors, getResizeHandles, MathUtils, measureText, renderSelectionBox, shapesIntersect } from '@/lib/drawing';
+import { Shape, ToolType, Point, AnchorType, StrokeStyle, ShapeType } from '@/types/shape';
+import { renderShapes, hitTest, hitTestHandle, getBoundingBox, getShapeAnchors, getResizeHandles, MathUtils, measureText, renderSelectionBox, shapesIntersect } from '@/lib/drawing';
 import styles from './Whiteboard.module.css';
 
 interface BoardRecord {
@@ -38,6 +38,8 @@ const getToolCursor = (tool: ToolType): string => {
     if (tool === 'text') return 'text';
     if (tool === 'delete') return 'not-allowed';
     if (tool === 'pointer') return 'default';
+    if (tool === 'hand') return 'grab';
+    if (tool === 'elbow-arrow') return 'crosshair';
     return 'crosshair';
 };
 
@@ -63,7 +65,7 @@ const getNextBoardName = (boards: BoardRecord[]): string => {
 
 export const Whiteboard: React.FC = () => {
     // Auth
-    const { data: session, status } = useSession();
+    const { data: session } = useSession();
     
     // State
     const [shapes, setShapes] = useState<Shape[]>([]);
@@ -83,6 +85,18 @@ export const Whiteboard: React.FC = () => {
 
     // Canvas & Interaction state
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const selectionBoxBaseSelectedIdsRef = useRef<string[]>([]);
+    const multiResizeRef = useRef<null | {
+        startPointer: Point;
+        startBox: { minX: number; minY: number; maxX: number; maxY: number };
+        startShapes: Map<string, Shape>;
+    }>(null);
+    const arrowDraftRef = useRef<null | {
+        start?: { shapeId: string; anchor: AnchorType; point: Point };
+        end?: { shapeId: string; anchor: AnchorType; point: Point };
+    }>(null);
+    const clipboardRef = useRef<Shape[] | null>(null);
+    const pasteCountRef = useRef(0);
     const [isDrawing, setIsDrawing] = useState(false);
     const [isPanning, setIsPanning] = useState(false);
     const [isDragging, setIsDragging] = useState(false);
@@ -95,7 +109,18 @@ export const Whiteboard: React.FC = () => {
     const [scale, setScale] = useState(1);
 
     // Text editing state
-    const [editingText, setEditingText] = useState<{ id: string, text: string, x: number, y: number, fontSize: number } | null>(null);
+    const [editingText, setEditingText] = useState<{ 
+        id: string;
+        text: string;
+        x: number;
+        y: number;
+        fontSize: number;
+        fontFamily?: string;
+        fontWeight?: string;
+        fontStyle?: string;
+        textDecoration?: string;
+        strokeColor?: string;
+    } | null>(null);
     const textInputRef = useRef<HTMLTextAreaElement>(null);
 
     // Export Modal State
@@ -113,6 +138,15 @@ export const Whiteboard: React.FC = () => {
     const [zoomCursor, setZoomCursor] = useState<'in' | 'out' | null>(null);
     const zoomCursorTimeoutRef = useRef<number | null>(null);
     const [canvasCursor, setCanvasCursor] = useState('default');
+    const isSpacePressedRef = useRef(false);
+    const activePointersRef = useRef<Map<number, Point>>(new Map());
+    const initialPinchDistanceRef = useRef<number | null>(null);
+    const initialScaleRef = useRef<number>(1);
+    const doubleTapStartRef = useRef<{ time: number; x: number; y: number } | null>(null);
+
+    const minimapCanvasRef = useRef<HTMLCanvasElement>(null);
+    const minimapTransformRef = useRef<{ scale: number; panX: number; panY: number } | null>(null);
+    const isMinimapDraggingRef = useRef(false);
 
     const styleTools: ToolType[] = ['pencil', 'rectangle', 'circle', 'diamond', 'rounded-rectangle', 'arrow', 'text'];
     const selectedShapes = shapes.filter(shape => selectedShapeIds.includes(shape.id));
@@ -187,6 +221,7 @@ export const Whiteboard: React.FC = () => {
                 : parsedBoards[0].id;
             const initialBoard = parsedBoards.find(board => board.id === defaultActiveBoardId) ?? parsedBoards[0];
 
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setBoards(parsedBoards);
             setActiveBoardId(initialBoard.id);
             setShapes(initialBoard.shapes);
@@ -207,6 +242,7 @@ export const Whiteboard: React.FC = () => {
     // Keep active board shapes synced when drawing changes
     useEffect(() => {
         if (!activeBoardId) return;
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setBoards(prevBoards => {
             const boardIndex = prevBoards.findIndex(board => board.id === activeBoardId);
             if (boardIndex === -1) return prevBoards;
@@ -300,6 +336,56 @@ export const Whiteboard: React.FC = () => {
         // Draw all standard shapes
         renderShapes(ctx, shapes, selectedShapeIds, scale, panOffset.x, panOffset.y, imageCacheRef.current);
 
+        // Group selection handles (multi-select)
+        if (selectedShapeIds.length > 1) {
+            const selected = shapes.filter(s => selectedShapeIds.includes(s.id));
+            if (selected.length > 0) {
+                const firstBox = getBoundingBox(selected[0]);
+                const groupBox = selected.slice(1).reduce((acc, s) => {
+                    const b = getBoundingBox(s);
+                    return {
+                        minX: Math.min(acc.minX, b.minX),
+                        minY: Math.min(acc.minY, b.minY),
+                        maxX: Math.max(acc.maxX, b.maxX),
+                        maxY: Math.max(acc.maxY, b.maxY),
+                    };
+                }, firstBox);
+
+                const padding = 4;
+                const handleShape: Shape = {
+                    id: "__group__",
+                    type: "rectangle",
+                    x: groupBox.minX - padding,
+                    y: groupBox.minY - padding,
+                    width: (groupBox.maxX - groupBox.minX) + padding * 2,
+                    height: (groupBox.maxY - groupBox.minY) + padding * 2,
+                    strokeColor: "#0d6efd",
+                    fillColor: "transparent",
+                };
+
+                ctx.save();
+                ctx.translate(panOffset.x, panOffset.y);
+                ctx.scale(scale, scale);
+                ctx.strokeStyle = "#0d6efd";
+                ctx.lineWidth = 1 / scale;
+                ctx.setLineDash([5, 5]);
+                ctx.strokeRect(handleShape.x, handleShape.y, handleShape.width, handleShape.height);
+                ctx.setLineDash([]);
+
+                // Handles
+                ctx.fillStyle = "#ffffff";
+                ctx.strokeStyle = "#0d6efd";
+                ctx.lineWidth = 1.5 / scale;
+                const handles = getResizeHandles(handleShape);
+                handles.forEach((handle) => {
+                    ctx.fillRect(handle.x, handle.y, handle.width, handle.height);
+                    ctx.strokeRect(handle.x, handle.y, handle.width, handle.height);
+                });
+
+                ctx.restore();
+            }
+        }
+
         if (selectionBox) {
             const minX = Math.min(selectionBox.startX, selectionBox.endX);
             const maxX = Math.max(selectionBox.startX, selectionBox.endX);
@@ -368,18 +454,19 @@ export const Whiteboard: React.FC = () => {
         if (currentTool === 'arrow' && hoveredAnchor) {
             const shp = shapes.find(s => s.id === hoveredAnchor.shapeId);
             if (shp) {
-                // simple trick: renderShapes draws all anchors if selected, but we want just this one globally on hover.
                 ctx.save();
                 ctx.translate(panOffset.x, panOffset.y);
                 ctx.scale(scale, scale);
-                ctx.fillStyle = "#3b82f6";
-                ctx.beginPath();
-                // To get exact coords we'd use the getShapeAnchors export, but for simplicity here's a rough hover indicator
-                // Assuming anchors are near center/edges
-                const cx = shp.x + shp.width / 2;
-                const cy = shp.y + shp.height / 2;
-                ctx.arc(cx, cy, 6, 0, 2 * Math.PI);
-                ctx.fill();
+                const anchor = getShapeAnchors(shp).find(a => a.type === hoveredAnchor.type);
+                if (anchor) {
+                    ctx.fillStyle = "#3b82f6";
+                    ctx.strokeStyle = "#ffffff";
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.arc(anchor.x, anchor.y, 6, 0, 2 * Math.PI);
+                    ctx.fill();
+                    ctx.stroke();
+                }
                 ctx.restore();
             }
         }
@@ -404,8 +491,50 @@ export const Whiteboard: React.FC = () => {
     }, []);
 
     useEffect(() => {
-        setCanvasCursor(getToolCursor(currentTool));
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setCanvasCursor(isSpacePressedRef.current ? 'grab' : getToolCursor(currentTool));
     }, [currentTool]);
+
+    const canUseSpacePan = useCallback(() => {
+        if (editingText) return false;
+        const active = document.activeElement;
+        if (!active) return true;
+        const tag = active.tagName;
+        if (tag === 'TEXTAREA' || tag === 'INPUT') return false;
+        if (tag === 'BUTTON' || tag === 'A' || tag === 'SELECT' || tag === 'OPTION') return false;
+        if ((active as HTMLElement).isContentEditable) return false;
+        return true;
+    }, [editingText]);
+
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.code !== 'Space') return;
+            if (!canUseSpacePan()) return;
+            if (isSpacePressedRef.current) return;
+            e.preventDefault();
+            isSpacePressedRef.current = true;
+            if (!isPanning && !isDrawing && !isDragging && !isResizing && !selectionBox) {
+                setCanvasCursor('grab');
+            }
+        };
+
+        const handleKeyUp = (e: KeyboardEvent) => {
+            if (e.code !== 'Space') return;
+            if (!isSpacePressedRef.current) return;
+            e.preventDefault();
+            isSpacePressedRef.current = false;
+            if (!isPanning) {
+                setCanvasCursor(getToolCursor(currentTool));
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown, { passive: false });
+        window.addEventListener('keyup', handleKeyUp, { passive: false });
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+            window.removeEventListener('keyup', handleKeyUp);
+        };
+    }, [canUseSpacePan, currentTool, isDrawing, isDragging, isPanning, isResizing, selectionBox]);
 
     // Event Handlers
     const getCanvasPoint = (e: React.PointerEvent<HTMLCanvasElement>): Point => {
@@ -419,12 +548,115 @@ export const Whiteboard: React.FC = () => {
         };
     };
 
+    const ARROW_SNAP_RADIUS = 18;
+
+    const findClosestAnchor = (point: Point) => {
+        // 1) Prefer explicit proximity to an edge anchor (top/bottom/left/right).
+        let best: null | { shapeId: string; anchor: AnchorType; point: Point; dist: number } = null;
+        for (const s of shapes) {
+            if (s.type === 'arrow' || s.type === 'text' || s.type === 'pencil') continue;
+            const anchors = getShapeAnchors(s);
+            for (const a of anchors) {
+                if (a.type === 'center') continue; // edges only
+                const d = MathUtils.distance(point, { x: a.x, y: a.y });
+                if (d <= ARROW_SNAP_RADIUS && (!best || d < best.dist)) {
+                    best = { shapeId: a.shapeId, anchor: a.type, point: { x: a.x, y: a.y }, dist: d };
+                }
+            }
+        }
+
+        if (best) return best;
+
+        // 2) If the pointer is on/inside a shape, snap to the nearest edge (midpoint anchor).
+        for (let i = shapes.length - 1; i >= 0; i--) {
+            const s = shapes[i];
+            if (s.type === 'arrow' || s.type === 'text' || s.type === 'pencil') continue;
+            if (!hitTest(s, point.x, point.y)) continue;
+
+            const box = getBoundingBox(s);
+            const dTop = Math.abs(point.y - box.minY);
+            const dBottom = Math.abs(point.y - box.maxY);
+            const dLeft = Math.abs(point.x - box.minX);
+            const dRight = Math.abs(point.x - box.maxX);
+            const min = Math.min(dTop, dBottom, dLeft, dRight);
+            let anchor: AnchorType = 'right';
+            if (min === dTop) anchor = 'top';
+            else if (min === dBottom) anchor = 'bottom';
+            else if (min === dLeft) anchor = 'left';
+            else anchor = 'right';
+
+            const snapped = getShapeAnchors(s).find(a => a.type === anchor);
+            if (snapped) {
+                return { shapeId: snapped.shapeId, anchor: snapped.type, point: { x: snapped.x, y: snapped.y }, dist: 0 };
+            }
+            break;
+        }
+
+        return null;
+    };
+
+    const getPinchDistance = (pointers: Map<number, Point>) => {
+        const points = Array.from(pointers.values());
+        if (points.length < 2) return 0;
+        return MathUtils.distance(points[0], points[1]);
+    };
+
+    const getPinchCenter = (pointers: Map<number, Point>) => {
+        const points = Array.from(pointers.values());
+        if (points.length < 2) return { x: 0, y: 0 };
+        return {
+            x: (points[0].x + points[1].x) / 2,
+            y: (points[0].y + points[1].y) / 2
+        };
+    };
+
     const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
         e.preventDefault();
+
+        // ------------------------------------------------------------------
+        // Mobile/Touch Double Tap Handling
+        // ------------------------------------------------------------------
+        // Standard dblclick is often suppressed by preventing default on touch
+        // or by browser zoom/scroll logic. We detect it manually here.
+        const now = Date.now();
+        const lastTap = doubleTapStartRef.current;
+        if (lastTap && (now - lastTap.time < 500)) {
+            const dist = Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y);
+            if (dist < 20) {
+                performDoubleTapAction(e.clientX, e.clientY);
+                doubleTapStartRef.current = null;
+                return;
+            }
+        }
+        doubleTapStartRef.current = { time: now, x: e.clientX, y: e.clientY };
+
         (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
 
-        // Middle click or Space + Drag to pan
-        if (e.button === 1 || e.altKey) {
+        // Update active pointers
+        const rect = (e.target as HTMLElement).getBoundingClientRect();
+        activePointersRef.current.set(e.pointerId, {
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top
+        });
+
+        // 2-finger pinch gesture
+        if (activePointersRef.current.size === 2) {
+            // Cancel any single-finger actions
+            setIsDrawing(false);
+            setIsPanning(false);
+            setIsDragging(false);
+            setIsResizing(null);
+            setSelectionBox(null);
+            setStartPoint(null);
+            setCurrentPoint(null);
+            
+            initialPinchDistanceRef.current = getPinchDistance(activePointersRef.current);
+            initialScaleRef.current = scale;
+            return;
+        }
+
+        // Middle click or Space + Drag or Hand tool to pan
+        if (e.button === 1 || (e.button === 0 && isSpacePressedRef.current) || currentTool === 'hand') {
             setCanvasCursor('grabbing');
             setIsPanning(true);
             setStartPoint({ x: e.clientX, y: e.clientY });
@@ -438,7 +670,66 @@ export const Whiteboard: React.FC = () => {
             commitTextEdit();
         }
 
+        if (currentTool === 'arrow') {
+            const snap = findClosestAnchor(point);
+            const start = snap ? snap.point : point;
+            if (snap) {
+                arrowDraftRef.current = { start: { shapeId: snap.shapeId, anchor: snap.anchor, point: start } };
+                setHoveredAnchor({ shapeId: snap.shapeId, type: snap.anchor });
+            } else {
+                arrowDraftRef.current = null;
+                setHoveredAnchor(null);
+            }
+            setCanvasCursor(getToolCursor('arrow'));
+            setIsDrawing(true);
+            setStartPoint(start);
+            setCurrentPoint(start);
+            setSelectedShapeIds([]);
+            return;
+        }
+
         if (currentTool === 'pointer' || currentTool === 'delete') {
+            // Group resize handles (only in pointer mode)
+            if (currentTool === 'pointer' && selectedShapeIds.length > 1) {
+                const selected = shapes.filter(s => selectedShapeIds.includes(s.id));
+                if (selected.length > 0) {
+                    const firstBox = getBoundingBox(selected[0]);
+                    const groupBox = selected.slice(1).reduce((acc, s) => {
+                        const b = getBoundingBox(s);
+                        return {
+                            minX: Math.min(acc.minX, b.minX),
+                            minY: Math.min(acc.minY, b.minY),
+                            maxX: Math.max(acc.maxX, b.maxX),
+                            maxY: Math.max(acc.maxY, b.maxY),
+                        };
+                    }, firstBox);
+                    const padding = 4;
+                    const handleShape: Shape = {
+                        id: "__group__",
+                        type: "rectangle",
+                        x: groupBox.minX - padding,
+                        y: groupBox.minY - padding,
+                        width: (groupBox.maxX - groupBox.minX) + padding * 2,
+                        height: (groupBox.maxY - groupBox.minY) + padding * 2,
+                        strokeColor: "#0d6efd",
+                        fillColor: "transparent",
+                    };
+                    const handle = hitTestHandle(handleShape, point.x, point.y);
+                    if (handle) {
+                        const resizeHandle = getResizeHandles(handleShape).find(item => item.id === handle);
+                        if (resizeHandle) setCanvasCursor(resizeHandle.cursor);
+                        setIsResizing(handle);
+                        setStartPoint(point);
+                        multiResizeRef.current = {
+                            startPointer: point,
+                            startBox: groupBox,
+                            startShapes: new Map(selected.map(s => [s.id, { ...s, points: s.points ? s.points.map(p => ({ ...p })) : undefined }])),
+                        };
+                        return;
+                    }
+                }
+            }
+
             // Check handles first
             if (selectedShapeIds.length === 1) {
                 const selectedShape = shapes.find(s => s.id === selectedShapeIds[0]);
@@ -471,15 +762,22 @@ export const Whiteboard: React.FC = () => {
                     if (selectedShapeIds.includes(hitShapeId)) setSelectedShapeIds(selectedShapeIds.filter(id => id !== hitShapeId));
                 } else {
                     setCanvasCursor('grabbing');
-                    if (!selectedShapeIds.includes(hitShapeId)) {
+                    if (e.shiftKey) {
+                        if (selectedShapeIds.includes(hitShapeId)) {
+                            setSelectedShapeIds(selectedShapeIds.filter(id => id !== hitShapeId));
+                            return;
+                        }
+                        setSelectedShapeIds([...selectedShapeIds, hitShapeId]);
+                    } else if (!selectedShapeIds.includes(hitShapeId) || selectedShapeIds.length > 1) {
                         setSelectedShapeIds([hitShapeId]);
                     }
                     setIsDragging(true);
                     setStartPoint(point);
                 }
             } else {
-                setSelectedShapeIds([]);
                 if (currentTool === 'pointer') {
+                    selectionBoxBaseSelectedIdsRef.current = e.shiftKey ? selectedShapeIds : [];
+                    if (!e.shiftKey) setSelectedShapeIds([]);
                     setSelectionBox({ startX: point.x, startY: point.y, endX: point.x, endY: point.y });
                 }
             }
@@ -494,7 +792,18 @@ export const Whiteboard: React.FC = () => {
             // Just start text editing
             setCanvasCursor('text');
             const newId = uuidv4();
-            setEditingText({ id: newId, text: '', x: point.x, y: point.y, fontSize: 20 });
+            setEditingText({ 
+                id: newId, 
+                text: '', 
+                x: point.x, 
+                y: point.y, 
+                fontSize: 20, 
+                fontFamily: 'Lobster Two',
+                fontWeight: '400',
+                fontStyle: 'normal',
+                textDecoration: 'none',
+                strokeColor: DEFAULT_STROKE_COLOR
+            });
             setCurrentTool('pointer');
             setTimeout(() => textInputRef.current?.focus(), 0);
         } else {
@@ -508,6 +817,92 @@ export const Whiteboard: React.FC = () => {
     };
 
     const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+        // Update active pointer position if previously captured
+        if (activePointersRef.current.has(e.pointerId)) {
+            const rect = (e.target as HTMLElement).getBoundingClientRect();
+            activePointersRef.current.set(e.pointerId, {
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top
+            });
+        }
+
+        // Pinch-to-Zoom logic
+        if (activePointersRef.current.size === 2) {
+            const currentDist = getPinchDistance(activePointersRef.current);
+            const initialDist = initialPinchDistanceRef.current;
+
+            if (initialDist && currentDist > 0) {
+                const center = getPinchCenter(activePointersRef.current);
+                const rect = (e.target as HTMLElement).getBoundingClientRect();
+                // Center relative to the canvas viewport (not document)
+                // e.clientX is viewport relative, center calculation already based on clientX/Y - rect.left/top
+                
+                // Calculate new scale
+                const scaleFactor = currentDist / initialDist;
+                const newScale = Math.min(Math.max(0.1, initialScaleRef.current * scaleFactor), 5);
+
+                // Calculate pan offset to keep center point stable
+                // P_screen = P_world * scale + panOffset
+                // We want P_world at center to remain at P_screen center
+                // P_world = (center - oldPan) / oldScale
+                // newPan = center - P_world * newScale
+                
+                const oldScale = scale;
+                // Note: We use the immediate previous scale for smooth updates if we were incrementally updating,
+                // but here we base on initial snapshot. This is better for stability.
+                
+                // Wait, if we use initialScaleRef, we calculate absolute new scale.
+                // We need the world coordinate of the center point at the START of pinch?
+                // Or dynamic? Dynamic is usually better for "following" fingers.
+                // Let's use the standard "zoom towards point" diff approach.
+                
+                // Simpler: 
+                // newPanX = center.x - (center.x - panOffset.x) * (newScale / scale);
+                // But `scale` in state might lag.
+                
+                // Let's stick to state updates. 
+                // To avoid jitter, we might want to defer this or use the ref values if we updated them?
+                // React state updates are batched. 
+                
+                // Let's use the formula:
+                // deltaScale = newScale / scale
+                // newPan = center - (center - currentPan) * deltaScale
+                
+                // However, we are calculating absolute newScale from initial.
+                // So we can compute world point using initial params? 
+                // No, standard pinch zoom implementation usually just computes delta from previous frame.
+                // But here events fire rapidly.
+                
+                // Let's try direct calculation:
+                // P_world = (center - panOffset) / scale
+                // newPan = center - P_world * newScale
+                
+                // This relies on `scale` and `panOffset` being up to date.
+                // If they lag, zooming might wobble.
+                // But usually acceptable in React 18+.
+
+                const worldX = (center.x - panOffset.x) / scale;
+                const worldY = (center.y - panOffset.y) / scale;
+                
+                const nextPanX = center.x - worldX * newScale;
+                const nextPanY = center.y - worldY * newScale;
+
+                setScale(newScale);
+                setPanOffset({ x: nextPanX, y: nextPanY });
+                
+                // Reset initial distance for next movement to treat as incremental?
+                // If we do incremental:
+                // initialPinchDistanceRef.current = currentDist;
+                // initialScaleRef.current = newScale;
+                // This prevents "snap back" if pointers jitter but accumulates error?
+                // Incremental is usually smoother for "continuous" feel.
+                
+                initialPinchDistanceRef.current = currentDist;
+                initialScaleRef.current = newScale; 
+            }
+            return;
+        }
+
         if (isPanning && startPoint) {
             setCanvasCursor('grabbing');
             setPanOffset({
@@ -519,6 +914,26 @@ export const Whiteboard: React.FC = () => {
         }
 
         const point = getCanvasPoint(e);
+        if (isDrawing && (currentTool === 'arrow' || currentTool === 'elbow-arrow' || currentTool === 'curve-arrow')) {
+            const snap = findClosestAnchor(point);
+            const nextPoint = snap ? snap.point : point;
+            setCurrentPoint(nextPoint);
+            if (snap) {
+                setHoveredAnchor({ shapeId: snap.shapeId, type: snap.anchor });
+                const existing = arrowDraftRef.current ?? {};
+                arrowDraftRef.current = {
+                    ...existing,
+                    end: { shapeId: snap.shapeId, anchor: snap.anchor, point: snap.point },
+                };
+            } else {
+                setHoveredAnchor(null);
+                if (arrowDraftRef.current) {
+                    arrowDraftRef.current = { ...arrowDraftRef.current, end: undefined };
+                }
+            }
+            return;
+        }
+
         setCurrentPoint(point);
 
         if (isDrawing && currentTool === 'pencil') {
@@ -547,11 +962,90 @@ export const Whiteboard: React.FC = () => {
             const maxY = Math.max(selectionBox.startY, point.y);
 
             const newSelectedIds = shapes.filter(s => shapesIntersect(s, { minX, minY, maxX, maxY })).map(s => s.id);
-            setSelectedShapeIds(newSelectedIds);
+            const base = selectionBoxBaseSelectedIdsRef.current;
+            const merged = base.length > 0 ? Array.from(new Set([...base, ...newSelectedIds])) : newSelectedIds;
+            setSelectedShapeIds(merged);
             return;
         }
 
-        if (isResizing && selectedShapeIds.length === 1 && startPoint) {
+        if (isResizing && multiResizeRef.current && startPoint) {
+            const { startPointer, startBox, startShapes } = multiResizeRef.current;
+            const dx = point.x - startPointer.x;
+            const dy = point.y - startPointer.y;
+
+            let newMinX = startBox.minX;
+            let newMinY = startBox.minY;
+            let newMaxX = startBox.maxX;
+            let newMaxY = startBox.maxY;
+
+            switch (isResizing) {
+                case 'se': newMaxX += dx; newMaxY += dy; break;
+                case 'sw': newMinX += dx; newMaxY += dy; break;
+                case 'ne': newMaxX += dx; newMinY += dy; break;
+                case 'nw': newMinX += dx; newMinY += dy; break;
+            }
+
+            const minSize = 10;
+            if (newMaxX - newMinX < minSize) {
+                if (isResizing === 'sw' || isResizing === 'nw') newMinX = newMaxX - minSize;
+                else newMaxX = newMinX + minSize;
+            }
+            if (newMaxY - newMinY < minSize) {
+                if (isResizing === 'ne' || isResizing === 'nw') newMinY = newMaxY - minSize;
+                else newMaxY = newMinY + minSize;
+            }
+
+            const startW = Math.max(1, startBox.maxX - startBox.minX);
+            const startH = Math.max(1, startBox.maxY - startBox.minY);
+            const scaleX = (newMaxX - newMinX) / startW;
+            const scaleY = (newMaxY - newMinY) / startH;
+
+            setShapes(prev => prev.map((shape) => {
+                if (!selectedShapeIds.includes(shape.id)) return shape;
+                const baseShape = startShapes.get(shape.id);
+                if (!baseShape) return shape;
+
+                const box = getBoundingBox(baseShape);
+                const boxW = Math.max(1, box.maxX - box.minX);
+                const boxH = Math.max(1, box.maxY - box.minY);
+                const targetMinX = newMinX + (box.minX - startBox.minX) * scaleX;
+                const targetMinY = newMinY + (box.minY - startBox.minY) * scaleY;
+                const targetW = boxW * scaleX;
+                const targetH = boxH * scaleY;
+
+                const widthSign = baseShape.width >= 0 ? 1 : -1;
+                const heightSign = baseShape.height >= 0 ? 1 : -1;
+
+                if (baseShape.type === 'pencil') {
+                    const nextPoints = baseShape.points?.map(p => ({
+                        x: p.x * scaleX,
+                        y: p.y * scaleY,
+                    }));
+                    return {
+                        ...shape,
+                        x: targetMinX,
+                        y: targetMinY,
+                        width: targetW,
+                        height: targetH,
+                        points: nextPoints,
+                    };
+                }
+
+                if (baseShape.type === 'text') {
+                    const factor = (Math.abs(scaleX) + Math.abs(scaleY)) / 2;
+                    const nextFontSize = Math.max(10, Math.round((baseShape.fontSize || 20) * factor));
+                    const dims = measureText(baseShape.text || '', nextFontSize);
+                    return { ...shape, x: targetMinX, y: targetMinY, width: dims.width, height: dims.height, fontSize: nextFontSize };
+                }
+
+                const nextX = widthSign >= 0 ? targetMinX : targetMinX + targetW;
+                const nextY = heightSign >= 0 ? targetMinY : targetMinY + targetH;
+                const nextW = widthSign >= 0 ? targetW : -targetW;
+                const nextH = heightSign >= 0 ? targetH : -targetH;
+
+                return { ...shape, x: nextX, y: nextY, width: nextW, height: nextH };
+            }));
+        } else if (isResizing && selectedShapeIds.length === 1 && startPoint) {
             const selectedShapeId = selectedShapeIds[0];
             const resizingShape = shapes.find(s => s.id === selectedShapeId);
             if (resizingShape) {
@@ -620,8 +1114,50 @@ export const Whiteboard: React.FC = () => {
                     setCanvasCursor(hoveredShape ? 'move' : 'default');
                 }
             } else {
-                const hoveredShape = shapes.some(shape => hitTest(shape, point.x, point.y));
-                setCanvasCursor(hoveredShape ? 'move' : 'default');
+                if (selectedShapeIds.length > 1) {
+                    const selected = shapes.filter(s => selectedShapeIds.includes(s.id));
+                    if (selected.length > 0) {
+                        const firstBox = getBoundingBox(selected[0]);
+                        const groupBox = selected.slice(1).reduce((acc, s) => {
+                            const b = getBoundingBox(s);
+                            return {
+                                minX: Math.min(acc.minX, b.minX),
+                                minY: Math.min(acc.minY, b.minY),
+                                maxX: Math.max(acc.maxX, b.maxX),
+                                maxY: Math.max(acc.maxY, b.maxY),
+                            };
+                        }, firstBox);
+                        const padding = 4;
+                        const handleShape: Shape = {
+                            id: "__group__",
+                            type: "rectangle",
+                            x: groupBox.minX - padding,
+                            y: groupBox.minY - padding,
+                            width: (groupBox.maxX - groupBox.minX) + padding * 2,
+                            height: (groupBox.maxY - groupBox.minY) + padding * 2,
+                            strokeColor: "#0d6efd",
+                            fillColor: "transparent",
+                        };
+                        const hoveredHandle = getResizeHandles(handleShape).find(handle => (
+                            point.x >= handle.x &&
+                            point.x <= handle.x + handle.width &&
+                            point.y >= handle.y &&
+                            point.y <= handle.y + handle.height
+                        ));
+                        if (hoveredHandle) {
+                            setCanvasCursor(hoveredHandle.cursor);
+                        } else {
+                            const hoveredShape = shapes.some(shape => hitTest(shape, point.x, point.y));
+                            setCanvasCursor(hoveredShape ? 'move' : 'default');
+                        }
+                    } else {
+                        const hoveredShape = shapes.some(shape => hitTest(shape, point.x, point.y));
+                        setCanvasCursor(hoveredShape ? 'move' : 'default');
+                    }
+                } else {
+                    const hoveredShape = shapes.some(shape => hitTest(shape, point.x, point.y));
+                    setCanvasCursor(hoveredShape ? 'move' : 'default');
+                }
             }
         } else {
             setCanvasCursor(getToolCursor(currentTool));
@@ -629,49 +1165,33 @@ export const Whiteboard: React.FC = () => {
 
         // Pointer hover effects (for arrow anchors)
         if (currentTool === 'arrow' && !isDrawing) {
-            let foundHover = false;
-            for (const s of shapes) {
-                if (s.type === 'arrow' || s.type === 'text' || s.type === 'pencil') continue;
-                const anchors = getShapeAnchors(s);
-                const hit = anchors.find(a => MathUtils.distance(point, { x: a.x, y: a.y }) < 15);
-                if (hit) {
-                    setHoveredAnchor({ shapeId: hit.shapeId, type: hit.type });
-                    foundHover = true;
-                    break;
-                }
-            }
-            if (!foundHover && hoveredAnchor) setHoveredAnchor(null);
-        } else if (currentTool === 'arrow' && isDrawing) {
-            let foundHover = false;
-            for (const s of shapes) {
-                if (s.type === 'arrow' || s.type === 'text' || s.type === 'pencil') continue;
-                const anchors = getShapeAnchors(s);
-                const hit = anchors.find(a => MathUtils.distance(point, { x: a.x, y: a.y }) < 15);
-                if (hit) {
-                    setHoveredAnchor({ shapeId: hit.shapeId, type: hit.type });
-                    foundHover = true;
-                    break;
-                }
-            }
-            if (!foundHover && hoveredAnchor) setHoveredAnchor(null);
-        } else {
-            if (hoveredAnchor) setHoveredAnchor(null);
+            const snap = findClosestAnchor(point);
+            if (snap) setHoveredAnchor({ shapeId: snap.shapeId, type: snap.anchor });
+            else if (hoveredAnchor) setHoveredAnchor(null);
+        } else if (currentTool !== 'arrow' && hoveredAnchor) {
+            setHoveredAnchor(null);
         }
     };
 
     const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
         (e.target as HTMLCanvasElement).releasePointerCapture(e.pointerId);
 
+        activePointersRef.current.delete(e.pointerId);
+        if (activePointersRef.current.size < 2) {
+            initialPinchDistanceRef.current = null;
+        }
+
         if (isPanning) {
             setIsPanning(false);
             setStartPoint(null);
-            setCanvasCursor(getToolCursor(currentTool));
+            setCanvasCursor(isSpacePressedRef.current ? 'grab' : getToolCursor(currentTool));
             return;
         }
 
         if (isResizing) {
             setIsResizing(null);
             setStartPoint(null);
+            multiResizeRef.current = null;
             setCanvasCursor(getToolCursor(currentTool));
             saveHistory(shapes); // Commit resize
             return;
@@ -685,7 +1205,7 @@ export const Whiteboard: React.FC = () => {
 
         if (isDragging) {
             setIsDragging(false);
-            setCanvasCursor(getToolCursor(currentTool));
+            setCanvasCursor(isSpacePressedRef.current ? 'grab' : getToolCursor(currentTool));
             saveHistory(shapes); // Commit move
             return;
         }
@@ -731,48 +1251,51 @@ export const Whiteboard: React.FC = () => {
             return;
         }
 
-        if (isDrawing && startPoint && currentPoint && currentTool !== 'pointer' && currentTool !== 'text') {
+        // Finalize shape creation
+        if (isDrawing && startPoint && currentPoint && currentTool !== 'pointer' && currentTool !== 'text' && currentTool !== 'pencil' && currentTool !== 'delete') {
             const width = currentPoint.x - startPoint.x;
             const height = currentPoint.y - startPoint.y;
 
-            // Smart arrow connection logic
-            let startShapeId, endShapeId, startAnchor, endAnchor;
-            if (currentTool === 'arrow') {
-                // Check if startPoint was on an anchor
-                for (const tempShape of shapes) {
-                    if (tempShape.type === 'arrow' || tempShape.type === 'text' || tempShape.type === 'pencil') continue;
-                    const anchors = getShapeAnchors(tempShape);
-                    const startHit = anchors.find(a => MathUtils.distance(startPoint, { x: a.x, y: a.y }) < 15);
-                    if (startHit) {
-                        startShapeId = startHit.shapeId;
-                        startAnchor = startHit.type;
-                        break;
+            let startShapeId = undefined, endShapeId = undefined, startAnchor = undefined, endAnchor = undefined;
+            if (currentTool === 'arrow' || currentTool === 'elbow-arrow' || currentTool === 'curve-arrow') {
+                const draft = arrowDraftRef.current;
+                
+                // Start attachment
+                if (draft?.start && draft.start.shapeId) {
+                    startShapeId = draft.start.shapeId;
+                    startAnchor = draft.start.anchor;
+                } else {
+                    const snap = findClosestAnchor(startPoint);
+                    if (snap) {
+                        startShapeId = snap.shapeId;
+                        startAnchor = snap.anchor;
                     }
                 }
-                // Check if currentPoint (endPoint) is on an anchor
-                for (const tempShape of shapes) {
-                    if (tempShape.type === 'arrow' || tempShape.type === 'text' || tempShape.type === 'pencil') continue;
-                    const anchors = getShapeAnchors(tempShape);
-                    const endHit = anchors.find(a => MathUtils.distance(currentPoint, { x: a.x, y: a.y }) < 15);
-                    if (endHit) {
-                        endShapeId = endHit.shapeId;
-                        endAnchor = endHit.type;
-                        break;
+
+                // End attachment
+                if (draft?.end && draft.end.shapeId) {
+                    endShapeId = draft.end.shapeId;
+                    endAnchor = draft.end.anchor;
+                } else {
+                    const snap = findClosestAnchor(currentPoint);
+                    if (snap) {
+                        endShapeId = snap.shapeId;
+                        endAnchor = snap.anchor;
                     }
                 }
             }
 
-            // Prevent microscopic shapes (unless it's a smart arrow connecting two different shapes which might be entirely dynamically sized)
-            if (Math.abs(width) > 5 || Math.abs(height) > 5 || (startShapeId && endShapeId && startShapeId !== endShapeId)) {
+            // Minimum size check or connection check
+            if (Math.abs(width) > 5 || Math.abs(height) > 5 || (startShapeId && endShapeId)) {
                 const newShape: Shape = {
                     id: uuidv4(),
-                    type: currentTool as Shape['type'],
+                    type: currentTool as ShapeType,
                     x: startPoint.x,
                     y: startPoint.y,
                     width,
                     height,
                     strokeColor: DEFAULT_STROKE_COLOR,
-                    fillColor: DEFAULT_FILL_COLOR,
+                    fillColor: 'transparent',
                     strokeWidth: DEFAULT_STROKE_WIDTH,
                     strokeStyle: DEFAULT_STROKE_STYLE,
                     startShapeId,
@@ -780,30 +1303,38 @@ export const Whiteboard: React.FC = () => {
                     startAnchor,
                     endAnchor
                 };
-                saveHistory([...shapes, newShape]);
-                if (currentTool !== 'arrow' && currentTool !== 'pencil') {
-                    setCurrentTool('pointer');
-                }
+                
+                const nextShapes = [...shapes, newShape];
+                setShapes(nextShapes); // Optimistic update
+                saveHistory(nextShapes);
                 setSelectedShapeIds([newShape.id]);
+
+                // Reset tool to pointer unless holding shift (not implemented yet) or continuous drawing desired
+                setCurrentTool('pointer');
             }
-            setCanvasCursor(getToolCursor(currentTool === 'arrow' ? 'arrow' : 'pointer'));
             setIsDrawing(false);
             setStartPoint(null);
             setCurrentPoint(null);
-            setFreehandPoints([]);
+            arrowDraftRef.current = null;
+            return;
         }
+
+        setIsDrawing(false);
+        setStartPoint(null);
+        setCurrentPoint(null);
+        arrowDraftRef.current = null;
     };
 
-    const handleDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const performDoubleTapAction = (clientX: number, clientY: number) => {
         // Double click creates text or edits existing text
-        if (currentTool !== 'pointer' && currentTool !== 'text') return;
+        if (currentTool !== 'pointer' && currentTool !== 'text' && currentTool !== 'hand') return;
 
         const rect = canvasRef.current?.getBoundingClientRect();
         if (!rect) return;
 
         const point = {
-            x: (e.clientX - rect.left - panOffset.x) / scale,
-            y: (e.clientY - rect.top - panOffset.y) / scale
+            x: (clientX - rect.left - panOffset.x) / scale,
+            y: (clientY - rect.top - panOffset.y) / scale
         };
 
         // Check if double clicking on existing text shape
@@ -818,52 +1349,251 @@ export const Whiteboard: React.FC = () => {
 
         if (hitTextShape) {
             // Edit existing
-            setEditingText({ id: hitTextShape.id, text: hitTextShape.text || '', x: hitTextShape.x, y: hitTextShape.y, fontSize: hitTextShape.fontSize || 20 });
+            setEditingText({ 
+                id: hitTextShape.id, 
+                text: hitTextShape.text || '', 
+                x: hitTextShape.x, 
+                y: hitTextShape.y, 
+                fontSize: hitTextShape.fontSize || 20,
+                // Force Lobster Two for editing as requested
+                fontFamily: 'Lobster Two',
+                fontWeight: hitTextShape.fontWeight || '400',
+                fontStyle: hitTextShape.fontStyle || 'normal',
+                textDecoration: hitTextShape.textDecoration || 'none',
+                strokeColor: hitTextShape.strokeColor
+            });
             // Hide the actual shape while editing so it doesn't double-render
             setShapes(prev => prev.filter(s => s.id !== hitTextShape!.id));
         } else {
             // Create New
-            setEditingText({ id: uuidv4(), text: '', x: point.x, y: point.y, fontSize: 20 });
+            setEditingText({ 
+                id: uuidv4(), 
+                text: '', 
+                x: point.x, 
+                y: point.y, 
+                fontSize: 20, 
+                fontFamily: 'Lobster Two',
+                fontWeight: '400',
+                fontStyle: 'normal',
+                textDecoration: 'none',
+                strokeColor: DEFAULT_STROKE_COLOR
+            });
         }
 
         setCurrentTool('pointer');
         setTimeout(() => textInputRef.current?.focus(), 0);
     };
 
-    const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
-        if (e.ctrlKey || e.metaKey) {
-            e.preventDefault();
-            // Lowered sensitivity based on user feedback
-            const zoomSensitivity = 0.0005;
-            const delta = -e.deltaY * zoomSensitivity;
-            const newScale = Math.min(Math.max(0.1, scale + delta), 5);
-            showZoomCursor(delta >= 0 ? 'in' : 'out');
+    const scaleRef = useRef(1);
+    const panOffsetRef = useRef({ x: 0, y: 0 });
 
-            // Zoom towards mouse pointer
-            const rect = canvasRef.current?.getBoundingClientRect();
-            if (rect) {
-                const mouseX = e.clientX - rect.left;
-                const mouseY = e.clientY - rect.top;
+    useEffect(() => {
+        scaleRef.current = scale;
+        panOffsetRef.current = panOffset;
+    }, [scale, panOffset]);
 
-                const newPanX = mouseX - (mouseX - panOffset.x) * (newScale / scale);
-                const newPanY = mouseY - (mouseY - panOffset.y) * (newScale / scale);
-
-                setScale(newScale);
-                setPanOffset({ x: newPanX, y: newPanY });
+    useEffect(() => {
+        const handleWheel = (e: WheelEvent) => {
+            if (e.ctrlKey || e.metaKey) {
+                e.preventDefault();
+                
+                // Use multiplicative zoom for smoother feel
+                const zoomSensitivity = 0.002;
+                const zoomFactor = Math.exp(-e.deltaY * zoomSensitivity);
+                const currentScale = scaleRef.current;
+                const newScale = Math.min(Math.max(0.1, currentScale * zoomFactor), 5);
+                
+                showZoomCursor(newScale > currentScale ? 'in' : 'out');
+    
+                // Zoom towards mouse pointer
+                const rect = canvasRef.current?.getBoundingClientRect();
+                if (rect) {
+                    const mouseX = e.clientX - rect.left;
+                    const mouseY = e.clientY - rect.top;
+                    const currentPan = panOffsetRef.current;
+    
+                    const worldX = (mouseX - currentPan.x) / currentScale;
+                    const worldY = (mouseY - currentPan.y) / currentScale;
+    
+                    const newPanX = mouseX - worldX * newScale;
+                    const newPanY = mouseY - worldY * newScale;
+    
+                    setScale(newScale);
+                    setPanOffset({ x: newPanX, y: newPanY });
+                }
+            } else {
+                e.preventDefault();
+                // Pan
+                const currentPan = panOffsetRef.current;
+                setPanOffset({
+                    x: currentPan.x - e.deltaX,
+                    y: currentPan.y - e.deltaY
+                });
             }
-        } else {
-            // Pan
-            setPanOffset({
-                x: panOffset.x - e.deltaX,
-                y: panOffset.y - e.deltaY
-            });
+        };
+
+        const canvas = canvasRef.current;
+        if (canvas) {
+            canvas.addEventListener('wheel', handleWheel, { passive: false });
         }
+
+        // Prevent native gesture zoom (Safari/touchpads)
+        const preventDefault = (e: Event) => e.preventDefault();
+        document.addEventListener('gesturestart', preventDefault);
+        document.addEventListener('gesturechange', preventDefault);
+        document.addEventListener('gestureend', preventDefault);
+
+        return () => {
+            if (canvas) {
+                canvas.removeEventListener('wheel', handleWheel);
+            }
+            document.removeEventListener('gesturestart', preventDefault);
+            document.removeEventListener('gesturechange', preventDefault);
+            document.removeEventListener('gestureend', preventDefault);
+        };
+    }, []);
+
+    const panToWorldPoint = useCallback((world: Point) => {
+        const boardCanvas = canvasRef.current;
+        const rect = boardCanvas?.parentElement?.getBoundingClientRect();
+        if (!rect) return;
+        setPanOffset({
+            x: (rect.width / 2) - (world.x * scale),
+            y: (rect.height / 2) - (world.y * scale),
+        });
+    }, [scale]);
+
+    const getMinimapWorldPoint = useCallback((e: React.PointerEvent<HTMLCanvasElement>): Point | null => {
+        const minimap = minimapCanvasRef.current;
+        const t = minimapTransformRef.current;
+        if (!minimap || !t) return null;
+        const rect = minimap.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        return {
+            x: (x - t.panX) / t.scale,
+            y: (y - t.panY) / t.scale,
+        };
+    }, []);
+
+    const handleMinimapPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+        e.preventDefault();
+        (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
+        isMinimapDraggingRef.current = true;
+        const world = getMinimapWorldPoint(e);
+        if (world) panToWorldPoint(world);
     };
+
+    const handleMinimapPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+        if (!isMinimapDraggingRef.current) return;
+        const world = getMinimapWorldPoint(e);
+        if (world) panToWorldPoint(world);
+    };
+
+    const handleMinimapPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+        (e.target as HTMLCanvasElement).releasePointerCapture(e.pointerId);
+        isMinimapDraggingRef.current = false;
+    };
+
+    const renderMinimap = useCallback(() => {
+        const minimap = minimapCanvasRef.current;
+        const boardCanvas = canvasRef.current;
+        if (!minimap || !boardCanvas) return;
+        const ctx = minimap.getContext('2d');
+        if (!ctx) return;
+
+        const dpr = window.devicePixelRatio || 1;
+        const rect = minimap.getBoundingClientRect();
+        const boardRect = boardCanvas.parentElement?.getBoundingClientRect();
+        if (!boardRect) return;
+
+        minimap.width = Math.max(1, Math.floor(rect.width * dpr));
+        minimap.height = Math.max(1, Math.floor(rect.height * dpr));
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        ctx.clearRect(0, 0, rect.width, rect.height);
+
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+        ctx.fillRect(0, 0, rect.width, rect.height);
+
+        const viewportWorld = {
+            x: (-panOffset.x) / scale,
+            y: (-panOffset.y) / scale,
+            width: boardRect.width / scale,
+            height: boardRect.height / scale,
+        };
+
+        let minX = viewportWorld.x;
+        let minY = viewportWorld.y;
+        let maxX = viewportWorld.x + viewportWorld.width;
+        let maxY = viewportWorld.y + viewportWorld.height;
+
+        if (shapes.length > 0) {
+            const first = getBoundingBox(shapes[0]);
+            minX = first.minX;
+            minY = first.minY;
+            maxX = first.maxX;
+            maxY = first.maxY;
+
+            for (let i = 1; i < shapes.length; i++) {
+                const b = getBoundingBox(shapes[i]);
+                minX = Math.min(minX, b.minX);
+                minY = Math.min(minY, b.minY);
+                maxX = Math.max(maxX, b.maxX);
+                maxY = Math.max(maxY, b.maxY);
+            }
+
+            minX = Math.min(minX, viewportWorld.x);
+            minY = Math.min(minY, viewportWorld.y);
+            maxX = Math.max(maxX, viewportWorld.x + viewportWorld.width);
+            maxY = Math.max(maxY, viewportWorld.y + viewportWorld.height);
+        }
+
+        const boundsW = Math.max(1, maxX - minX);
+        const boundsH = Math.max(1, maxY - minY);
+        const paddingPx = 10;
+        const usableW = Math.max(1, rect.width - paddingPx * 2);
+        const usableH = Math.max(1, rect.height - paddingPx * 2);
+        const miniScale = Math.min(usableW / boundsW, usableH / boundsH);
+
+        const panX = paddingPx - minX * miniScale;
+        const panY = paddingPx - minY * miniScale;
+        minimapTransformRef.current = { scale: miniScale, panX, panY };
+
+        renderShapes(ctx, shapes, [], miniScale, panX, panY, imageCacheRef.current);
+
+        const vx = panX + viewportWorld.x * miniScale;
+        const vy = panY + viewportWorld.y * miniScale;
+        const vw = viewportWorld.width * miniScale;
+        const vh = viewportWorld.height * miniScale;
+
+        ctx.save();
+        ctx.fillStyle = 'rgba(59, 130, 246, 0.12)';
+        ctx.strokeStyle = 'rgba(59, 130, 246, 0.9)';
+        ctx.lineWidth = 1;
+        ctx.fillRect(vx, vy, vw, vh);
+        ctx.strokeRect(vx, vy, vw, vh);
+        ctx.restore();
+
+        ctx.strokeStyle = 'rgba(17, 24, 39, 0.18)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(0.5, 0.5, rect.width - 1, rect.height - 1);
+    }, [panOffset.x, panOffset.y, scale, shapes, imageCacheVersion]);
+
+    useEffect(() => {
+        requestAnimationFrame(renderMinimap);
+    }, [renderMinimap]);
+
+    useEffect(() => {
+        const handleResize = () => requestAnimationFrame(renderMinimap);
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, [renderMinimap]);
 
     // Text tool commit
     const commitTextEdit = () => {
         if (editingText && editingText.text.trim().length > 0) {
-            const dims = measureText(editingText.text, editingText.fontSize);
+            const dims = measureText(editingText.text, editingText.fontSize, editingText.fontFamily, editingText.fontWeight, editingText.fontStyle);
             const newShape: Shape = {
                 id: editingText.id,
                 type: 'text',
@@ -871,14 +1601,19 @@ export const Whiteboard: React.FC = () => {
                 y: editingText.y,
                 width: dims.width,
                 height: dims.height,
-                strokeColor: DEFAULT_STROKE_COLOR,
+                strokeColor: editingText.strokeColor || DEFAULT_STROKE_COLOR,
                 fillColor: 'transparent',
                 strokeWidth: DEFAULT_STROKE_WIDTH,
                 strokeStyle: DEFAULT_STROKE_STYLE,
                 text: editingText.text,
-                fontSize: editingText.fontSize
+                fontSize: editingText.fontSize,
+                fontFamily: editingText.fontFamily,
+                fontWeight: editingText.fontWeight,
+                fontStyle: editingText.fontStyle,
+                textDecoration: editingText.textDecoration,
             };
-            saveHistory([...shapes, newShape]);
+            // Remove any shape with same ID before adding (in case we edited existing)
+            saveHistory([...shapes.filter(s => s.id !== editingText.id), newShape]);
             setSelectedShapeIds([newShape.id]);
         }
         setEditingText(null);
@@ -886,16 +1621,93 @@ export const Whiteboard: React.FC = () => {
 
     // Keyboard bindings
     useEffect(() => {
+        const deepCloneShape = (shape: Shape): Shape => ({
+            ...shape,
+            points: shape.points ? shape.points.map(p => ({ ...p })) : undefined,
+        });
+
+        const getSelectedShapesInOrder = (): Shape[] => {
+            if (selectedShapeIds.length === 0) return [];
+            const selectedSet = new Set(selectedShapeIds);
+            return shapes.filter(s => selectedSet.has(s.id)).map(deepCloneShape);
+        };
+
+        const pasteShapes = (sourceShapes: Shape[]) => {
+            if (sourceShapes.length === 0) return;
+
+            pasteCountRef.current += 1;
+            const offset = 24 * pasteCountRef.current;
+
+            const idMap = new Map<string, string>();
+            for (const s of sourceShapes) {
+                idMap.set(s.id, uuidv4());
+            }
+
+            const next = sourceShapes.map((s) => {
+                const nextId = idMap.get(s.id) ?? uuidv4();
+                const nextShape: Shape = {
+                    ...deepCloneShape(s),
+                    id: nextId,
+                    x: s.x + offset,
+                    y: s.y + offset,
+                };
+
+                if (s.type === 'arrow') {
+                    const nextStartId = s.startShapeId ? idMap.get(s.startShapeId) : undefined;
+                    const nextEndId = s.endShapeId ? idMap.get(s.endShapeId) : undefined;
+
+                    // Only keep smart-linking if both endpoints are part of the paste.
+                    if (nextStartId && nextEndId) {
+                        nextShape.startShapeId = nextStartId;
+                        nextShape.endShapeId = nextEndId;
+                    } else {
+                        delete nextShape.startShapeId;
+                        delete nextShape.endShapeId;
+                        delete nextShape.startAnchor;
+                        delete nextShape.endAnchor;
+                    }
+                }
+
+                return nextShape;
+            });
+
+            saveHistory([...shapes, ...next]);
+            setSelectedShapeIds(next.map(s => s.id));
+        };
+
         const handleKeyDown = (e: KeyboardEvent) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+            const isEditingText = document.activeElement?.tagName === 'TEXTAREA';
+            const isMeta = e.ctrlKey || e.metaKey;
+            const key = e.key.toLowerCase();
+
+            if (isMeta && key === 'z') {
+                e.preventDefault();
                 if (e.shiftKey) {
                     redo();
                 } else {
                     undo();
                 }
-            } else if ((e.ctrlKey || e.metaKey) && e.key === 'a' && document.activeElement?.tagName !== 'TEXTAREA') {
+            } else if (isMeta && key === 'y') {
+                e.preventDefault();
+                redo();
+            } else if (isMeta && key === 'a' && !isEditingText) {
                 e.preventDefault();
                 setSelectedShapeIds(shapes.map(s => s.id));
+            } else if (isMeta && key === 'c' && !isEditingText) {
+                if (selectedShapeIds.length === 0) return;
+                e.preventDefault();
+                clipboardRef.current = getSelectedShapesInOrder();
+                pasteCountRef.current = 0;
+            } else if (isMeta && key === 'v' && !isEditingText) {
+                if (!clipboardRef.current || clipboardRef.current.length === 0) return;
+                e.preventDefault();
+                pasteShapes(clipboardRef.current);
+            } else if (isMeta && key === 'd' && !isEditingText) {
+                // Duplicate selection (browser default is bookmark on Ctrl+D)
+                if (selectedShapeIds.length === 0) return;
+                e.preventDefault();
+                pasteCountRef.current = 0;
+                pasteShapes(getSelectedShapesInOrder());
             } else if (e.key === 'Delete' || e.key === 'Backspace') {
                 // Only delete if we're not editing text
                 if (selectedShapeIds.length > 0 && document.activeElement?.tagName !== 'TEXTAREA') {
@@ -1259,6 +2071,18 @@ export const Whiteboard: React.FC = () => {
         saveHistory(nextShapes);
     };
 
+    const handleChangeArrowType = (newType: 'arrow' | 'elbow-arrow' | 'curve-arrow') => {
+        if (selectedShapeIds.length === 0) return;
+        const nextShapes = shapes.map(shape => {
+            if (!selectedShapeIds.includes(shape.id)) return shape;
+            if (['arrow', 'elbow-arrow', 'curve-arrow'].includes(shape.type)) {
+                return { ...shape, type: newType };
+            }
+            return shape;
+        });
+        saveHistory(nextShapes);
+    };
+
     const applyCustomStrokeColor = () => {
         applyStyleToSelectedShapes({ strokeColor: customStrokeColor });
     };
@@ -1395,6 +2219,45 @@ export const Whiteboard: React.FC = () => {
             {shouldShowStyleSidebar && (
                 <aside className={styles.styleSidebar}>
                     <div className={styles.styleSidebarHeader}>Style</div>
+
+                    {selectedShapeIds.length === 1 && 
+                     ['arrow', 'elbow-arrow', 'curve-arrow'].includes(shapes.find(s => s.id === selectedShapeIds[0])?.type || '') && (
+                        <section className={styles.styleSection}>
+                            <h4 className={styles.styleLabel}>Arrow Type</h4>
+                            <div className={styles.optionRow}>
+                                <button
+                                    className={`${styles.styleOption} ${shapes.find(s => s.id === selectedShapeIds[0])?.type === 'arrow' ? styles.styleOptionActive : ''}`}
+                                    onClick={() => handleChangeArrowType('arrow')}
+                                    title="Straight"
+                                >
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <line x1="4" y1="12" x2="20" y2="12" />
+                                        <polyline points="16 8 20 12 16 16" />
+                                    </svg>
+                                </button>
+                                <button
+                                    className={`${styles.styleOption} ${shapes.find(s => s.id === selectedShapeIds[0])?.type === 'elbow-arrow' ? styles.styleOptionActive : ''}`}
+                                    onClick={() => handleChangeArrowType('elbow-arrow')}
+                                    title="Elbow"
+                                >
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <path d="M4 18 L 12 18 L 12 6 L 20 6" />
+                                        <polyline points="16 2 20 6 16 10" />
+                                    </svg>
+                                </button>
+                                <button
+                                    className={`${styles.styleOption} ${shapes.find(s => s.id === selectedShapeIds[0])?.type === 'curve-arrow' ? styles.styleOptionActive : ''}`}
+                                    onClick={() => handleChangeArrowType('curve-arrow')}
+                                    title="Curve"
+                                >
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <path d="M4 16 Q 12 4 20 16" />
+                                        <polyline points="16 12 20 16 15 19" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </section>
+                    )}
 
                     <section className={styles.styleSection}>
                         <h4 className={styles.styleLabel}>Stroke</h4>
@@ -1551,11 +2414,10 @@ export const Whiteboard: React.FC = () => {
                     onPointerMove={handlePointerMove}
                     onPointerUp={handlePointerUp}
                     onPointerCancel={handlePointerUp}
-                    onPointerLeave={() => setCanvasCursor(getToolCursor(currentTool))}
-                    onDoubleClick={handleDoubleClick}
-                    onWheel={handleWheel}
+                    onPointerLeave={() => setCanvasCursor(isSpacePressedRef.current ? 'grab' : getToolCursor(currentTool))}
                     tabIndex={0}
                 />
+
 
                 {editingText && (
                     <textarea
@@ -1564,16 +2426,108 @@ export const Whiteboard: React.FC = () => {
                         style={{
                             left: editingText.x * scale + panOffset.x,
                             top: editingText.y * scale + panOffset.y,
-                            color: DEFAULT_STROKE_COLOR,
+                            color: editingText.strokeColor || '#000000',
                             fontSize: `${editingText.fontSize}px`,
+                            lineHeight: 1.25,
+                            fontFamily: 'var(--font-lobster-two)',
+                            fontWeight: editingText.fontWeight || 'normal',
+                            fontStyle: editingText.fontStyle || 'normal',
+                            textDecoration: editingText.textDecoration || 'none',
                             transform: `scale(${scale})`,
                             transformOrigin: 'top left',
                         }}
                         value={editingText.text}
                         onChange={(e) => setEditingText({ ...editingText, text: e.target.value })}
-                        onBlur={commitTextEdit}
+                        spellCheck={false}
+                        onBlur={(e) => {
+                             // Only commit if we aren't clicking the toolbar
+                             // But toolbar is inside the same parent div?
+                             // No, toolbar is sibling.
+                             // Actually, using onMouseDown={e.preventDefault()} on toolbar buttons usually prevents blur.
+                             // But let's verify.
+                             commitTextEdit();
+                        }}
                         autoFocus
                     />
+                )}
+                
+                {editingText && (
+                    <div 
+                        className={styles.textToolbarWrapper}
+                        style={{
+                            position: 'absolute',
+                            left: editingText.x * scale + panOffset.x,
+                            top: (editingText.y * scale + panOffset.y) - 60,
+                            display: 'flex',
+                            gap: 8,
+                            padding: 8,
+                            background: '#1e1e1e',
+                            borderRadius: 8,
+                            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                            zIndex: 100,
+                            pointerEvents: 'auto'
+                        }}
+                        onMouseDown={(e) => e.preventDefault()} // Prevent blur when clicking toolbar
+                    >
+                       <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                           <button 
+                                style={{ padding: '4px 8px', borderRadius: 4, background: editingText.fontWeight === 'bold' ? '#444' : 'transparent', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}
+                                onClick={() => setEditingText({ ...editingText, fontWeight: editingText.fontWeight === 'bold' ? 'normal' : 'bold' })}>
+                               B
+                           </button>
+                           <button 
+                                style={{ padding: '4px 8px', borderRadius: 4, background: editingText.fontStyle === 'italic' ? '#444' : 'transparent', color: '#fff', border: 'none', cursor: 'pointer', fontStyle: 'italic' }}
+                                onClick={() => setEditingText({ ...editingText, fontStyle: editingText.fontStyle === 'italic' ? 'normal' : 'italic' })}>
+                               I
+                           </button>
+                           <button 
+                                style={{ padding: '4px 8px', borderRadius: 4, background: editingText.textDecoration === 'underline' ? '#444' : 'transparent', color: '#fff', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
+                                onClick={() => setEditingText({ ...editingText, textDecoration: editingText.textDecoration === 'underline' ? 'none' : 'underline' })}>
+                               U
+                           </button>
+                           <div style={{ width: 1, height: 20, background: '#444', margin: '0 4px' }} />
+                           <input type="color" value={editingText.strokeColor || '#000000'} 
+                                onChange={(e) => setEditingText({ ...editingText, strokeColor: e.target.value })}
+                                style={{ width: 24, height: 24, padding: 0, border: 'none', background: 'transparent', cursor: 'pointer' }}
+                           />
+                       </div>
+                       <div style={{ width: 1, height: 20, background: '#444', margin: '0 4px' }} />
+                       <div style={{ display: 'flex', gap: 4 }}>
+                           <button style={{ padding: '4px 8px', borderRadius: 4, background: 'transparent', color: '#fff', border: 'none', cursor: 'pointer' }}
+                                onClick={() => {
+                                    setEditingText({ ...editingText, text: editingText.text + (editingText.text.length > 0 && !editingText.text.endsWith('\n') ? '\n• ' : '• ') }); 
+                                    textInputRef.current?.focus(); 
+                                }}>
+                               •
+                           </button>
+                           <button style={{ padding: '4px 8px', borderRadius: 4, background: 'transparent', color: '#fff', border: 'none', cursor: 'pointer' }}
+                                onClick={() => {
+                                    setEditingText({ ...editingText, text: editingText.text + (editingText.text.length > 0 && !editingText.text.endsWith('\n') ? '\n→ ' : '→ ') }); 
+                                    textInputRef.current?.focus(); 
+                                }}>
+                               →
+                           </button>
+                           <button style={{ padding: '4px 8px', borderRadius: 4, background: 'transparent', color: '#fff', border: 'none', cursor: 'pointer' }}
+                                onClick={() => {
+                                    setEditingText({ ...editingText, text: editingText.text + (editingText.text.length > 0 && !editingText.text.endsWith('\n') ? '\n1. ' : '1. ') }); 
+                                    textInputRef.current?.focus(); 
+                                }}>
+                               1.
+                           </button>
+                           <button style={{ padding: '4px 8px', borderRadius: 4, background: 'transparent', color: '#fff', border: 'none', cursor: 'pointer' }}
+                                onClick={() => {
+                                    setEditingText({ ...editingText, text: editingText.text + (editingText.text.length > 0 && !editingText.text.endsWith('\n') ? '\na. ' : 'a. ') }); 
+                                    textInputRef.current?.focus(); 
+                                }}>
+                               a.
+                           </button>
+                       </div>
+                       <div style={{ width: 1, height: 20, background: '#444', margin: '0 4px' }} />
+                       <div style={{ display: 'flex', gap: 4 }}>
+                           <button style={{ padding: '4px 8px', borderRadius: 4, background: 'transparent', color: '#fff', border: 'none', cursor: 'pointer' }} onClick={() => setEditingText({ ...editingText, fontSize: (editingText.fontSize || 20) + 2 })}>A+</button>
+                           <button style={{ padding: '4px 8px', borderRadius: 4, background: 'transparent', color: '#fff', border: 'none', cursor: 'pointer' }} onClick={() => setEditingText({ ...editingText, fontSize: Math.max(8, (editingText.fontSize || 20) - 2) })}>A-</button>
+                       </div>
+                    </div>
                 )}
             </div>
 
