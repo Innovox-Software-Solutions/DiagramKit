@@ -1,5 +1,5 @@
 .toolbar {
-  position: absolute;
+  position: fixed;
   top: max(16px, calc(env(safe-area-inset-top) + 8px));
   left: calc(50% + ((var(--toolbar-left-reserve, 0px) - var(--toolbar-right-reserve, 0px)) / 2));
   transform: translateX(-50%);

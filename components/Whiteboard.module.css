@@ -100,7 +100,7 @@
 }
 
 .zoomControls {
-    position: absolute;
+    position: fixed;
     bottom: max(16px, env(safe-area-inset-bottom));
     left: var(--ui-gap);
     display: flex;
@@ -114,7 +114,7 @@
 }
 
 .minimap {
-    position: absolute;
+    position: fixed;
     bottom: max(16px, env(safe-area-inset-bottom));
     right: var(--ui-gap);
     width: clamp(140px, 18vw, 220px);
@@ -164,7 +164,7 @@
 }
 
 .sidebarToggle {
-    position: absolute;
+    position: fixed;
     top: max(16px, calc(env(safe-area-inset-top) + 8px));
     left: var(--ui-gap);
     z-index: 130;
@@ -186,7 +186,7 @@
 }
 
 .userMenuContainer {
-    position: absolute;
+    position: fixed;
     top: max(16px, calc(env(safe-area-inset-top) + 8px));
     right: 16px;
     z-index: 130;
@@ -197,7 +197,7 @@
 }
 
 .sidebar {
-    position: absolute;
+    position: fixed;
     top: var(--floating-top);
     left: var(--ui-gap);
     z-index: 120;
@@ -343,7 +343,7 @@
 }
 
 .styleSidebar {
-    position: absolute;
+    position: fixed;
     top: var(--floating-top);
     right: var(--ui-gap);
     z-index: 120;

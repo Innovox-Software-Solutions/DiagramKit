@@ -1364,40 +1364,74 @@ export const Whiteboard: React.FC = () => {
         setTimeout(() => textInputRef.current?.focus(), 0);
     };
 
-    const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
-        if (e.ctrlKey || e.metaKey) {
-            e.preventDefault();
-            
-            // Use multiplicative zoom for smoother feel
-            const zoomSensitivity = 0.002;
-            const zoomFactor = Math.exp(-e.deltaY * zoomSensitivity);
-            const newScale = Math.min(Math.max(0.1, scale * zoomFactor), 5);
-            
-            showZoomCursor(newScale > scale ? 'in' : 'out');
+    const scaleRef = useRef(1);
+    const panOffsetRef = useRef({ x: 0, y: 0 });
 
-            // Zoom towards mouse pointer
-            const rect = canvasRef.current?.getBoundingClientRect();
-            if (rect) {
-                const mouseX = e.clientX - rect.left;
-                const mouseY = e.clientY - rect.top;
+    useEffect(() => {
+        scaleRef.current = scale;
+        panOffsetRef.current = panOffset;
+    }, [scale, panOffset]);
 
-                const worldX = (mouseX - panOffset.x) / scale;
-                const worldY = (mouseY - panOffset.y) / scale;
-
-                const newPanX = mouseX - worldX * newScale;
-                const newPanY = mouseY - worldY * newScale;
-
-                setScale(newScale);
-                setPanOffset({ x: newPanX, y: newPanY });
+    useEffect(() => {
+        const handleWheel = (e: WheelEvent) => {
+            if (e.ctrlKey || e.metaKey) {
+                e.preventDefault();
+                
+                // Use multiplicative zoom for smoother feel
+                const zoomSensitivity = 0.002;
+                const zoomFactor = Math.exp(-e.deltaY * zoomSensitivity);
+                const currentScale = scaleRef.current;
+                const newScale = Math.min(Math.max(0.1, currentScale * zoomFactor), 5);
+                
+                showZoomCursor(newScale > currentScale ? 'in' : 'out');
+    
+                // Zoom towards mouse pointer
+                const rect = canvasRef.current?.getBoundingClientRect();
+                if (rect) {
+                    const mouseX = e.clientX - rect.left;
+                    const mouseY = e.clientY - rect.top;
+                    const currentPan = panOffsetRef.current;
+    
+                    const worldX = (mouseX - currentPan.x) / currentScale;
+                    const worldY = (mouseY - currentPan.y) / currentScale;
+    
+                    const newPanX = mouseX - worldX * newScale;
+                    const newPanY = mouseY - worldY * newScale;
+    
+                    setScale(newScale);
+                    setPanOffset({ x: newPanX, y: newPanY });
+                }
+            } else {
+                e.preventDefault();
+                // Pan
+                const currentPan = panOffsetRef.current;
+                setPanOffset({
+                    x: currentPan.x - e.deltaX,
+                    y: currentPan.y - e.deltaY
+                });
             }
-        } else {
-            // Pan
-            setPanOffset({
-                x: panOffset.x - e.deltaX,
-                y: panOffset.y - e.deltaY
-            });
+        };
+
+        const canvas = canvasRef.current;
+        if (canvas) {
+            canvas.addEventListener('wheel', handleWheel, { passive: false });
         }
-    };
+
+        // Prevent native gesture zoom (Safari/touchpads)
+        const preventDefault = (e: Event) => e.preventDefault();
+        document.addEventListener('gesturestart', preventDefault);
+        document.addEventListener('gesturechange', preventDefault);
+        document.addEventListener('gestureend', preventDefault);
+
+        return () => {
+            if (canvas) {
+                canvas.removeEventListener('wheel', handleWheel);
+            }
+            document.removeEventListener('gesturestart', preventDefault);
+            document.removeEventListener('gesturechange', preventDefault);
+            document.removeEventListener('gestureend', preventDefault);
+        };
+    }, []);
 
     const panToWorldPoint = useCallback((world: Point) => {
         const boardCanvas = canvasRef.current;
@@ -2362,7 +2396,6 @@ export const Whiteboard: React.FC = () => {
                     onPointerCancel={handlePointerUp}
                     onPointerLeave={() => setCanvasCursor(isSpacePressedRef.current ? 'grab' : getToolCursor(currentTool))}
                     onDoubleClick={handleDoubleClick}
-                    onWheel={handleWheel}
                     tabIndex={0}
                 />
 
