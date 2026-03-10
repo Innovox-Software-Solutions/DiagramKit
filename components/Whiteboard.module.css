@@ -1,6 +1,6 @@
 .container {
     --ui-gap: clamp(10px, 1.4vw, 16px);
-    --floating-top: max(64px, calc(env(safe-area-inset-top) + 56px));
+    --floating-top: max(92px, calc(env(safe-area-inset-top) + 84px));
     --boards-sidebar-width: clamp(280px, 26vw, 320px);
     --style-sidebar-width: clamp(272px, 24vw, 304px);
     --toolbar-left-reserve: calc(var(--ui-gap) + 52px);
@@ -23,7 +23,8 @@
 }
 
 .withStyleSidebar {
-    --toolbar-right-reserve: calc(var(--ui-gap) + var(--style-sidebar-width) + 14px);
+    /* Keep toolbar in same position when style sidebar opens - no shifting */
+    --toolbar-right-reserve: var(--ui-gap);
 }
 
 .canvasContainer {
@@ -344,12 +345,12 @@
 
 .styleSidebar {
     position: fixed;
-    top: var(--floating-top);
+    top: calc(var(--floating-top) + 60px); /* Position below toolbar */
     right: var(--ui-gap);
     z-index: 120;
     width: var(--style-sidebar-width);
     max-width: calc(100vw - (var(--ui-gap) * 2));
-    max-height: calc(100dvh - var(--floating-top) - var(--ui-gap));
+    max-height: calc(100dvh - var(--floating-top) - 120px);
     overflow-y: auto;
     background: #ffffff;
     border: 1px solid #e5e7eb;
