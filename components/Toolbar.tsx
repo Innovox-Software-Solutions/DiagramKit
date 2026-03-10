@@ -1,5 +1,5 @@
 import React from 'react';
-import { MousePointer2, Pencil, Square, Circle, Diamond, ArrowRight, CornerDownRight, Type, ImagePlus, Trash2, Undo2, Redo2, Plus, Minus, Download, Share2, Upload } from 'lucide-react';
+import { MousePointer2, Pencil, Square, Circle, Diamond, ArrowRight, CornerDownRight, Spline, Type, ImagePlus, Trash2, Undo2, Redo2, Plus, Minus, Download, Share2, Upload } from 'lucide-react';
 import { ToolType } from '@/types/shape';
 import styles from './Toolbar.module.css';
 
@@ -97,6 +97,13 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                     title="Elbow Arrow"
                 >
                     <CornerDownRight size={18} />
+                </button>
+                <button
+                    className={`${styles.iconButton} ${currentTool === 'curve-arrow' ? styles.active : ''}`}
+                    onClick={() => setCurrentTool('curve-arrow')}
+                    title="Curve Arrow"
+                >
+                    <Spline size={18} />
                 </button>
                 <button
                     className={`${styles.iconButton} ${currentTool === 'text' ? styles.active : ''}`}

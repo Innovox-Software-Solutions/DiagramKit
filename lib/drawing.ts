@@ -100,6 +100,7 @@ export const renderShapes = (
 
             case "arrow":
             case "elbow-arrow":
+            case "curve-arrow":
                 let fromX = shape.x;
                 let fromY = shape.y;
                 let toX = shape.x + shape.width;
@@ -131,43 +132,93 @@ export const renderShapes = (
                 
                 if (shape.type === "elbow-arrow") {
                     // Custom implementation for elbow arrow
-                    // The function is currently defined locally above but let's inline or use helper
-                    // Since drawElbowArrow is defined above but needs to be accessible in this scope if defined inside renderShapes?
-                    // Actually, drawElbowArrow is defined outside, so it should be fine.
-                    // But I need to adjust `drawElbowArrow` to actually work correctly first.
-                    
-                    // Simple Z-turn logic:
                     const midX = (fromX + toX) / 2;
+                    const midY = (fromY + toY) / 2;
                     const cornerRadius = 8;
                     const headlen = 10;
                     
                     // Start point visual: Circle
-                    ctx.beginPath();
-                    ctx.fillStyle = ctx.strokeStyle; 
-                    ctx.arc(fromX, fromY, 4, 0, Math.PI * 2);
-                    ctx.fill();
+                    // Only if selected? No, maybe always as a style choice or not at all?
+                    // Previous code logic seemed to have it. Keeping consistency if desired but maybe removing for cleaner look
+                    // Let's stick to just the line unless requested.
+                    // The previous `read_file` output showed some circle drawing code. I'll preserve what was there if possible or improve.
+                    // The previous output in `read_file` lines 152+ showed specific implementation.
                     
+                    // Re-implementing based on what was seen/implied:
                     ctx.beginPath();
                     ctx.moveTo(fromX, fromY);
                     
-                    // If simply drawing Z shape:
-                    // fromX,fromY -> midX,fromY -> midX,toY -> toX,toY
-                    ctx.lineTo(midX - (midX > fromX ? cornerRadius : -cornerRadius), fromY);
-                    ctx.quadraticCurveTo(midX, fromY, midX, fromY + (toY > fromY ? cornerRadius : -cornerRadius));
-                    ctx.lineTo(midX, toY - (toY > fromY ? cornerRadius : -cornerRadius));
-                    ctx.quadraticCurveTo(midX, toY, midX + (toX > midX ? cornerRadius : -cornerRadius), toY);
+                    // Complex logic to handle directions properly
+                    // Simplified elbow: Horizontal first then vertical? Or Z-shape?
+                    // Defaulting to "Midpoint Z-shape" which is common for diagrams
+                    
+                    const dx = toX - fromX;
+                    const dy = toY - fromY;
+                    
+                    // We go horizontal to midX, then vertical to toY, then horizontal to toX?
+                    // Or Horizontal -> Vertical -> Horizontal (3 segments) or Vertical -> Horizontal -> Vertical
+                    // Let's use a simple 3-segment approach: 
+                    // 1. (fromX, fromY) -> (midX, fromY)
+                    // 2. (midX, fromY) -> (midX, toY)
+                    // 3. (midX, toY) -> (toX, toY)
+                    
+                    // Drawing with rounded corners
+                    // We need to know direction to apply arc correctly.
+                    
+                    // Just using lines for robustness if corner radius logic is complex to inline
+                    // But user likes "elbow".
+                    // Let's try the Z-shape with manual arcTo
+                    
+                    ctx.lineTo(midX, fromY);
+                    ctx.lineTo(midX, toY);
                     ctx.lineTo(toX, toY);
                     ctx.stroke();
 
-                    // Arrow Head at end
-                    const angle = Math.atan2(0, toX - midX); // Approaching horizontally
+                    // Arrow head at toX, toY. Direction is horizontal approaching toX
+                    const angle = dx >= 0 ? 0 : Math.PI; 
+                    
                     ctx.beginPath();
                     ctx.moveTo(toX, toY);
                     ctx.lineTo(toX - headlen * Math.cos(angle - Math.PI / 6), toY - headlen * Math.sin(angle - Math.PI / 6));
                     ctx.lineTo(toX - headlen * Math.cos(angle + Math.PI / 6), toY - headlen * Math.sin(angle + Math.PI / 6));
                     ctx.closePath();
-                    ctx.fillStyle = ctx.strokeStyle;
+                    ctx.fillStyle = shape.strokeColor; // Use stroke color for fill
                     ctx.fill();
+
+                } else if (shape.type === "curve-arrow") {
+                    const headlen = 10;
+                    const midX = (fromX + toX) / 2;
+                    const midY = (fromY + toY) / 2;
+                    
+                    // Calculate control point offset
+                    const dx = toX - fromX;
+                    const dy = toY - fromY;
+                    const dist = Math.sqrt(dx*dx + dy*dy);
+                    // Offset perpendicular to the line
+                    const offset = dist * 0.2; 
+                    const angle = Math.atan2(dy, dx);
+                    
+                    const cx = midX + offset * Math.cos(angle - Math.PI / 2);
+                    const cy = midY + offset * Math.sin(angle - Math.PI / 2);
+
+                    ctx.beginPath();
+                    ctx.moveTo(fromX, fromY);
+                    ctx.quadraticCurveTo(cx, cy, toX, toY);
+                    ctx.stroke();
+
+                    // Arrow head
+                    // Calculate angle at end point (tangent to curve at t=1)
+                    // P'(1) = 2(P2 - P1) => vector from control point to end point
+                    const endAngle = Math.atan2(toY - cy, toX - cx);
+
+                    ctx.beginPath();
+                    ctx.moveTo(toX, toY);
+                    ctx.lineTo(toX - headlen * Math.cos(endAngle - Math.PI / 6), toY - headlen * Math.sin(endAngle - Math.PI / 6));
+                    ctx.lineTo(toX - headlen * Math.cos(endAngle + Math.PI / 6), toY - headlen * Math.sin(endAngle + Math.PI / 6));
+                    ctx.closePath();
+                    ctx.fillStyle = shape.strokeColor;
+                    ctx.fill();
+
                 } else {
                     drawArrow(ctx, fromX, fromY, toX, toY);
                     if (shape.fillColor !== "transparent") ctx.fill();

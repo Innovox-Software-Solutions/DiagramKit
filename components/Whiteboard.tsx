@@ -745,7 +745,7 @@ export const Whiteboard: React.FC = () => {
         }
 
         const point = getCanvasPoint(e);
-        if (isDrawing && (currentTool === 'arrow' || currentTool === 'elbow-arrow')) {
+        if (isDrawing && (currentTool === 'arrow' || currentTool === 'elbow-arrow' || currentTool === 'curve-arrow')) {
             const snap = findClosestAnchor(point);
             const nextPoint = snap ? snap.point : point;
             setCurrentPoint(nextPoint);
@@ -1083,7 +1083,7 @@ export const Whiteboard: React.FC = () => {
             const height = currentPoint.y - startPoint.y;
 
             let startShapeId = undefined, endShapeId = undefined, startAnchor = undefined, endAnchor = undefined;
-            if (currentTool === 'arrow' || currentTool === 'elbow-arrow') {
+            if (currentTool === 'arrow' || currentTool === 'elbow-arrow' || currentTool === 'curve-arrow') {
                 const draft = arrowDraftRef.current;
                 
                 // Start attachment
@@ -1136,7 +1136,7 @@ export const Whiteboard: React.FC = () => {
                 setSelectedShapeIds([newShape.id]);
 
                 // Reset tool to pointer unless holding shift (not implemented yet) or continuous drawing desired
-                if (currentTool !== 'arrow' && currentTool !== 'elbow-arrow') {
+                if (currentTool !== 'arrow' && currentTool !== 'elbow-arrow' && currentTool !== 'curve-arrow') {
                      setCurrentTool('pointer');
                 }
             }
@@ -1832,6 +1832,18 @@ export const Whiteboard: React.FC = () => {
         saveHistory(nextShapes);
     };
 
+    const handleChangeArrowType = (newType: 'arrow' | 'elbow-arrow' | 'curve-arrow') => {
+        if (selectedShapeIds.length === 0) return;
+        const nextShapes = shapes.map(shape => {
+            if (!selectedShapeIds.includes(shape.id)) return shape;
+            if (['arrow', 'elbow-arrow', 'curve-arrow'].includes(shape.type)) {
+                return { ...shape, type: newType };
+            }
+            return shape;
+        });
+        saveHistory(nextShapes);
+    };
+
     const applyCustomStrokeColor = () => {
         applyStyleToSelectedShapes({ strokeColor: customStrokeColor });
     };
@@ -1968,6 +1980,45 @@ export const Whiteboard: React.FC = () => {
             {shouldShowStyleSidebar && (
                 <aside className={styles.styleSidebar}>
                     <div className={styles.styleSidebarHeader}>Style</div>
+
+                    {selectedShapeIds.length === 1 && 
+                     ['arrow', 'elbow-arrow', 'curve-arrow'].includes(shapes.find(s => s.id === selectedShapeIds[0])?.type || '') && (
+                        <section className={styles.styleSection}>
+                            <h4 className={styles.styleLabel}>Arrow Type</h4>
+                            <div className={styles.optionRow}>
+                                <button
+                                    className={`${styles.styleOption} ${shapes.find(s => s.id === selectedShapeIds[0])?.type === 'arrow' ? styles.styleOptionActive : ''}`}
+                                    onClick={() => handleChangeArrowType('arrow')}
+                                    title="Straight"
+                                >
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <line x1="4" y1="12" x2="20" y2="12" />
+                                        <polyline points="16 8 20 12 16 16" />
+                                    </svg>
+                                </button>
+                                <button
+                                    className={`${styles.styleOption} ${shapes.find(s => s.id === selectedShapeIds[0])?.type === 'elbow-arrow' ? styles.styleOptionActive : ''}`}
+                                    onClick={() => handleChangeArrowType('elbow-arrow')}
+                                    title="Elbow"
+                                >
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <path d="M4 18 L 12 18 L 12 6 L 20 6" />
+                                        <polyline points="16 2 20 6 16 10" />
+                                    </svg>
+                                </button>
+                                <button
+                                    className={`${styles.styleOption} ${shapes.find(s => s.id === selectedShapeIds[0])?.type === 'curve-arrow' ? styles.styleOptionActive : ''}`}
+                                    onClick={() => handleChangeArrowType('curve-arrow')}
+                                    title="Curve"
+                                >
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <path d="M4 16 Q 12 4 20 16" />
+                                        <polyline points="16 12 20 16 15 19" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </section>
+                    )}
 
                     <section className={styles.styleSection}>
                         <h4 className={styles.styleLabel}>Stroke</h4>
