@@ -13,11 +13,17 @@ const getMeasureCtx = () => {
 };
 
 const getResolvedFont = (family?: string): string => {
-    if (family === 'Lobster Two' && typeof document !== 'undefined') {
+    // If family is explicitly something else, try to use it? 
+    // The user said "dont use simple for all text use this".
+    // I'll make Lobster Two the default if family is missing or 'Lobster Two'.
+    if ((!family || family === 'Lobster Two' || family === 'sans-serif') && typeof document !== 'undefined') {
         const style = getComputedStyle(document.body).getPropertyValue('--font-lobster-two');
         if (style) return style.trim().replace(/"/g, "'");
     }
-    return family || 'sans-serif';
+    // Even if it's some other string, we might want to override? 
+    // But let's respect explicit choices if there were multiple fonts. 
+    // Assuming 'simple' refers to default sans-serif.
+    return family || 'Lobster Two, cursive';
 };
 
 export const measureText = (text: string, fontSize: number, fontFamily?: string, fontWeight?: string, fontStyle?: string): { width: number, height: number } => {

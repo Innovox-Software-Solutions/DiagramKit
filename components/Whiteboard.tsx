@@ -1355,7 +1355,8 @@ export const Whiteboard: React.FC = () => {
                 x: hitTextShape.x, 
                 y: hitTextShape.y, 
                 fontSize: hitTextShape.fontSize || 20,
-                fontFamily: hitTextShape.fontFamily || 'Lobster Two',
+                // Force Lobster Two for editing as requested
+                fontFamily: 'Lobster Two',
                 fontWeight: hitTextShape.fontWeight || '400',
                 fontStyle: hitTextShape.fontStyle || 'normal',
                 textDecoration: hitTextShape.textDecoration || 'none',
@@ -2417,17 +2418,6 @@ export const Whiteboard: React.FC = () => {
                     tabIndex={0}
                 />
 
-                <div className={styles.minimap}>
-                    <canvas
-                        ref={minimapCanvasRef}
-                        className={styles.minimapCanvas}
-                        onPointerDown={handleMinimapPointerDown}
-                        onPointerMove={handleMinimapPointerMove}
-                        onPointerUp={handleMinimapPointerUp}
-                        onPointerCancel={handleMinimapPointerUp}
-                        aria-label="Minimap"
-                    />
-                </div>
 
                 {editingText && (
                     <textarea
@@ -2439,7 +2429,7 @@ export const Whiteboard: React.FC = () => {
                             color: editingText.strokeColor || '#000000',
                             fontSize: `${editingText.fontSize}px`,
                             lineHeight: 1.25,
-                            fontFamily: editingText.fontFamily === 'Lobster Two' ? 'var(--font-lobster-two)' : 'sans-serif',
+                            fontFamily: 'var(--font-lobster-two)',
                             fontWeight: editingText.fontWeight || 'normal',
                             fontStyle: editingText.fontStyle || 'normal',
                             textDecoration: editingText.textDecoration || 'none',
@@ -2480,11 +2470,6 @@ export const Whiteboard: React.FC = () => {
                         onMouseDown={(e) => e.preventDefault()} // Prevent blur when clicking toolbar
                     >
                        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                           <button 
-                                style={{ padding: '4px 8px', borderRadius: 4, background: editingText.fontFamily === 'Lobster Two' ? '#444' : 'transparent', color: '#fff', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-lobster-two)' }}
-                                onClick={() => setEditingText({ ...editingText, fontFamily: editingText.fontFamily === 'Lobster Two' ? 'sans-serif' : 'Lobster Two' })}>
-                               F
-                           </button>
                            <button 
                                 style={{ padding: '4px 8px', borderRadius: 4, background: editingText.fontWeight === 'bold' ? '#444' : 'transparent', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}
                                 onClick={() => setEditingText({ ...editingText, fontWeight: editingText.fontWeight === 'bold' ? 'normal' : 'bold' })}>
