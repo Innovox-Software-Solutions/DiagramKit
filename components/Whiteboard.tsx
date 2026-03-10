@@ -1077,35 +1077,45 @@ export const Whiteboard: React.FC = () => {
             return;
         }
 
-        if (isDrawing && startPoint && currentPoint && (currentTool === 'arrow' || currentTool === 'elbow-arrow')) {
+        // Finalize shape creation
+        if (isDrawing && startPoint && currentPoint && currentTool !== 'pointer' && currentTool !== 'text' && currentTool !== 'pencil' && currentTool !== 'delete') {
             const width = currentPoint.x - startPoint.x;
             const height = currentPoint.y - startPoint.y;
 
-            // Smart arrow connection logic
-            let startShapeId, endShapeId, startAnchor, endAnchor;
+            let startShapeId = undefined, endShapeId = undefined, startAnchor = undefined, endAnchor = undefined;
             if (currentTool === 'arrow' || currentTool === 'elbow-arrow') {
                 const draft = arrowDraftRef.current;
-                // If we started on an anchor, use it
-                // If not, try to find one? usually handlePointerDown finds it
-            }
-                const start = draft?.start ?? findClosestAnchor(startPoint);
-                const end = draft?.end ?? findClosestAnchor(currentPoint);
-
-                if (start && 'shapeId' in start) {
-                    startShapeId = start.shapeId;
-                    startAnchor = start.anchor;
+                
+                // Start attachment
+                if (draft?.start && draft.start.shapeId) {
+                    startShapeId = draft.start.shapeId;
+                    startAnchor = draft.start.anchor;
+                } else {
+                    const snap = findClosestAnchor(startPoint);
+                    if (snap) {
+                        startShapeId = snap.shapeId;
+                        startAnchor = snap.anchor;
+                    }
                 }
-                if (end && 'shapeId' in end) {
-                    endShapeId = end.shapeId;
-                    endAnchor = end.anchor;
+
+                // End attachment
+                if (draft?.end && draft.end.shapeId) {
+                    endShapeId = draft.end.shapeId;
+                    endAnchor = draft.end.anchor;
+                } else {
+                    const snap = findClosestAnchor(currentPoint);
+                    if (snap) {
+                        endShapeId = snap.shapeId;
+                        endAnchor = snap.anchor;
+                    }
                 }
             }
 
-            // Prevent microscopic shapes (unless it's a smart arrow connecting two different shapes which might be entirely dynamically sized)
-            if (Math.abs(width) > 5 || Math.abs(height) > 5 || (startShapeId && endShapeId && startShapeId !== endShapeId)) {
+            // Minimum size check or connection check
+            if (Math.abs(width) > 5 || Math.abs(height) > 5 || (startShapeId && endShapeId)) {
                 const newShape: Shape = {
                     id: uuidv4(),
-                    type: currentTool as Shape['type'],
+                    type: currentTool as ShapeType,
                     x: startPoint.x,
                     y: startPoint.y,
                     width,
@@ -1119,19 +1129,28 @@ export const Whiteboard: React.FC = () => {
                     startAnchor,
                     endAnchor
                 };
-                saveHistory([...shapes, newShape]);
-                if (currentTool !== 'arrow' && currentTool !== 'pencil') {
-                    setCurrentTool('pointer');
-                }
+                
+                const nextShapes = [...shapes, newShape];
+                setShapes(nextShapes); // Optimistic update
+                saveHistory(nextShapes);
                 setSelectedShapeIds([newShape.id]);
+
+                // Reset tool to pointer unless holding shift (not implemented yet) or continuous drawing desired
+                if (currentTool !== 'arrow' && currentTool !== 'elbow-arrow') {
+                     setCurrentTool('pointer');
+                }
             }
-            setCanvasCursor(getToolCursor(currentTool === 'arrow' ? 'arrow' : 'pointer'));
             setIsDrawing(false);
             setStartPoint(null);
             setCurrentPoint(null);
-            setFreehandPoints([]);
             arrowDraftRef.current = null;
+            return;
         }
+
+        setIsDrawing(false);
+        setStartPoint(null);
+        setCurrentPoint(null);
+        arrowDraftRef.current = null;
     };
 
     const handleDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
