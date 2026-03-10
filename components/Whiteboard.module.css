@@ -540,6 +540,7 @@
     }
 
     .styleSidebar {
+        position: fixed;
         left: 10px;
         right: 10px;
         width: auto;
@@ -547,19 +548,24 @@
         bottom: calc(var(--bottom-toolbar-offset) + var(--bottom-toolbar-height) + 12px);
         max-height: min(42dvh, 380px);
         border-radius: 14px;
+        z-index: 210;
     }
 
     .zoomControls {
+        position: fixed;
         top: auto;
         left: auto;
         right: 10px;
         bottom: calc(var(--bottom-toolbar-offset) + var(--bottom-toolbar-height) + 16px);
+        z-index: 190;
     }
 
     .minimap {
+        position: fixed;
         right: 10px;
         bottom: calc(var(--bottom-toolbar-offset) + var(--bottom-toolbar-height) + 16px + 58px);
         width: clamp(120px, 28vw, 200px);
+        z-index: 150;
     }
 
     .withStyleSidebar .minimap {
