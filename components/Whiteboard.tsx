@@ -8,7 +8,7 @@ import { Toolbar } from './Toolbar';
 import { UserMenu } from './UserMenu';
 import { AuthModal } from './AuthModal';
 import { ExportModal, ExportOptions } from './ExportModal';
-import { Shape, ToolType, Point, AnchorType, StrokeStyle } from '@/types/shape';
+import { Shape, ToolType, Point, AnchorType, StrokeStyle, ShapeType } from '@/types/shape';
 import { renderShapes, hitTest, hitTestHandle, getBoundingBox, getShapeAnchors, getResizeHandles, MathUtils, measureText, renderSelectionBox, shapesIntersect } from '@/lib/drawing';
 import styles from './Whiteboard.module.css';
 
