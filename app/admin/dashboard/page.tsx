@@ -135,189 +135,221 @@ export default function AdminDashboard() {
       <div className={`${styles.orb} ${styles.orb1}`} />
       <div className={`${styles.orb} ${styles.orb2}`} />
 
-      {/* Header */}
-      <header className={styles.header}>
-        <div className={styles.headerLeft}>
-          <span className={styles.logoText}>Innovox</span>
-          <span className={styles.adminBadge}>Admin</span>
-        </div>
-        <div className={styles.headerRight}>
-          <button className={styles.refreshBtn} onClick={fetchStats} title="Refresh">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10" /><path d="M20.49 15a9 9 0 0 1-14.85 3.36L1 14" /></svg>
-          </button>
-          <button className={styles.logoutBtn} onClick={handleLogout}>
-            Logout
-          </button>
-        </div>
-      </header>
-
-      {/* Content */}
-      <main className={styles.main}>
-        <h1 className={styles.pageTitle}>Dashboard Analytics</h1>
-
-        {loading && !stats && (
-          <div className={styles.loaderWrap}>
-            <div className={styles.spinner} />
-            <p className={styles.loaderText}>Loading analytics…</p>
+      {/* Sidebar */}
+      <aside className={styles.sidebar}>
+        <div className={styles.brand}>
+          <div className={styles.brandLogo}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
           </div>
-        )}
+          <span className={styles.brandText}>Innovox</span>
+        </div>
 
-        {error && <p className={styles.errorText}>{error}</p>}
+        <nav className={styles.nav}>
+          <div className={`${styles.navItem} ${styles.navItemActive}`}>
+            <LayoutIcon />
+            Dashboard
+          </div>
+          <div className={styles.navItem}>
+             <UsersIcon />
+             Users
+          </div>
+          <div className={styles.navItem}>
+             <BoardIcon />
+             Boards
+          </div>
+          <div className={styles.navItem}>
+             <SettingsIcon />
+             Settings
+          </div>
+        </nav>
 
-        {stats && (
-          <>
-            {/* Stat cards */}
-            <section className={styles.statGrid}>
-              <StatCard
-                icon={<UsersIcon />}
-                label="Total Users"
-                value={stats.totalUsers}
-                sub={`+${stats.usersThisWeek} this week`}
-                color="#6366f1"
-              />
-              <StatCard
-                icon={<BoardIcon />}
-                label="Total Boards"
-                value={stats.totalBoards}
-                sub={`+${stats.boardsThisWeek} this week`}
-                color="#8b5cf6"
-              />
-              <StatCard
-                icon={<SessionIcon />}
-                label="Active Sessions"
-                value={stats.totalSessions}
-                sub="current sessions"
-                color="#a78bfa"
-              />
-              <StatCard
-                icon={<AvgIcon />}
-                label="Boards / User"
-                value={stats.avgBoardsPerUser}
-                sub="average"
-                color="#c084fc"
-              />
-            </section>
+        <div className={styles.sidebarFooter}>
+            <button className={`${styles.navItem} ${styles.logoutBtn}`} onClick={handleLogout} style={{ width: '100%', justifyContent: 'flex-start', background: 'transparent', border: 'none', color: '#f87171' }}>
+                <LogOutIcon />
+                Logout
+            </button>
+        </div>
+      </aside>
 
-            {/* Highlight row */}
-            <section className={styles.highlightRow}>
-              <div className={styles.highlightCard}>
-                <span className={styles.highlightNum}>{stats.usersToday}</span>
-                <span className={styles.highlightLabel}>Users today</span>
-              </div>
-              <div className={styles.highlightCard}>
-                <span className={styles.highlightNum}>{stats.boardsToday}</span>
-                <span className={styles.highlightLabel}>Boards today</span>
-              </div>
-              <div className={styles.highlightCard}>
-                <span className={styles.highlightNum}>{stats.usersThisMonth}</span>
-                <span className={styles.highlightLabel}>Users this month</span>
-              </div>
-            </section>
+      {/* Main Content Area */}
+      <div className={styles.contentArea}>
+        <div className={styles.topBar}>
+            <h2 className={styles.pageHeaderTitle}>Overview</h2>
+            <div className={styles.topActions}>
+                <button className={styles.refreshBtn} onClick={fetchStats} title="Refresh Data">
+                    <RefreshIcon />
+                </button>
+                <div className={styles.avatarFallback} style={{ width: 36, height: 36, background: '#1e1e24', color: '#fff', border: '1px solid #333' }}>
+                    AD
+                </div>
+            </div>
+        </div>
 
-            {/* Charts */}
-            <section className={styles.chartRow}>
-              <MiniBarChart
-                data={stats.dailySignups}
-                color="linear-gradient(180deg, #818cf8 0%, #6366f1 100%)"
-                label="User Sign-ups (7 days)"
-              />
-              <MiniBarChart
-                data={stats.dailyBoards}
-                color="linear-gradient(180deg, #a78bfa 0%, #8b5cf6 100%)"
-                label="Boards Created (7 days)"
-              />
-            </section>
+        <main className={styles.main}>
+            {loading && !stats && (
+            <div className={styles.loaderWrap}>
+                <div className={styles.spinner} />
+                <p className={styles.loaderText}>Loading analytics…</p>
+            </div>
+            )}
 
-            {/* Tables */}
-            <section className={styles.tableRow}>
-              {/* Recent users */}
-              <div className={styles.tableCard}>
-                <h3 className={styles.tableTitle}>Recent Users</h3>
-                <div className={styles.tableWrap}>
-                  <table className={styles.table}>
-                    <thead>
-                      <tr>
-                        <th>User</th>
-                        <th>Email</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {stats.recentUsers.map((u) => (
-                        <tr key={u.id}>
-                          <td>
-                            <div className={styles.userCell}>
-                              {u.image ? (
-                                <Image
-                                  src={u.image}
-                                  alt=""
-                                  width={28}
-                                  height={28}
-                                  className={styles.avatar}
-                                />
-                              ) : (
-                                <div className={styles.avatarFallback}>
-                                  {(u.name || u.email || "?")[0].toUpperCase()}
+            {error && <p className={styles.errorText}>{error}</p>}
+
+            {stats && (
+            <>
+                {/* Stat cards */}
+                <section className={styles.statGrid}>
+                <StatCard
+                    icon={<UsersIcon />}
+                    label="Total Users"
+                    value={stats.totalUsers}
+                    sub={`+${stats.usersThisWeek} this week`}
+                    color="#6366f1"
+                />
+                <StatCard
+                    icon={<BoardIcon />}
+                    label="Total Boards"
+                    value={stats.totalBoards}
+                    sub={`+${stats.boardsThisWeek} this week`}
+                    color="#8b5cf6"
+                />
+                <StatCard
+                    icon={<SessionIcon />}
+                    label="Active Sessions"
+                    value={stats.totalSessions}
+                    sub="current sessions"
+                    color="#a78bfa"
+                />
+                <StatCard
+                    icon={<AvgIcon />}
+                    label="Boards / User"
+                    value={stats.avgBoardsPerUser}
+                    sub="average"
+                    color="#c084fc"
+                />
+                </section>
+
+                {/* Highlight row */}
+                <section className={styles.highlightRow}>
+                <div className={styles.highlightCard}>
+                    <span className={styles.highlightNum}>{stats.usersToday}</span>
+                    <span className={styles.highlightLabel}>Users today</span>
+                </div>
+                <div className={styles.highlightCard}>
+                    <span className={styles.highlightNum}>{stats.boardsToday}</span>
+                    <span className={styles.highlightLabel}>Boards today</span>
+                </div>
+                <div className={styles.highlightCard}>
+                    <span className={styles.highlightNum}>{stats.usersThisMonth}</span>
+                    <span className={styles.highlightLabel}>Users this month</span>
+                </div>
+                </section>
+
+                {/* Charts */}
+                <section className={styles.chartRow}>
+                <MiniBarChart
+                    data={stats.dailySignups}
+                    color="linear-gradient(180deg, #818cf8 0%, #6366f1 100%)"
+                    label="User Sign-ups (7 days)"
+                />
+                <MiniBarChart
+                    data={stats.dailyBoards}
+                    color="linear-gradient(180deg, #a78bfa 0%, #8b5cf6 100%)"
+                    label="Boards Created (7 days)"
+                />
+                </section>
+
+                {/* Tables */}
+                <section className={styles.tableRow}>
+                {/* Recent users */}
+                <div className={styles.tableCard}>
+                    <h3 className={styles.tableTitle}>Recent Users</h3>
+                    <div className={styles.tableWrap}>
+                    <table className={styles.table}>
+                        <thead>
+                        <tr>
+                            <th>User</th>
+                            <th>Email</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {stats.recentUsers.map((u) => (
+                            <tr key={u.id}>
+                            <td>
+                                <div className={styles.userCell}>
+                                {u.image ? (
+                                    <Image
+                                    src={u.image}
+                                    alt=""
+                                    width={28}
+                                    height={28}
+                                    className={styles.avatar}
+                                    />
+                                ) : (
+                                    <div className={styles.avatarFallback}>
+                                    {(u.name || u.email || "?")[0].toUpperCase()}
+                                    </div>
+                                )}
+                                <span>{u.name || "—"}</span>
                                 </div>
-                              )}
-                              <span>{u.name || "—"}</span>
-                            </div>
-                          </td>
-                          <td className={styles.mutedCell}>
-                            {u.email || "—"}
-                          </td>
-                        </tr>
-                      ))}
-                      {stats.recentUsers.length === 0 && (
-                        <tr>
-                          <td colSpan={2} className={styles.emptyCell}>
-                            No users yet
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
+                            </td>
+                            <td className={styles.mutedCell}>
+                                {u.email || "—"}
+                            </td>
+                            </tr>
+                        ))}
+                        {stats.recentUsers.length === 0 && (
+                            <tr>
+                            <td colSpan={2} className={styles.emptyCell}>
+                                No users yet
+                            </td>
+                            </tr>
+                        )}
+                        </tbody>
+                    </table>
+                    </div>
                 </div>
-              </div>
 
-              {/* Recent boards */}
-              <div className={styles.tableCard}>
-                <h3 className={styles.tableTitle}>Recent Boards</h3>
-                <div className={styles.tableWrap}>
-                  <table className={styles.table}>
-                    <thead>
-                      <tr>
-                        <th>Board</th>
-                        <th>Owner</th>
-                        <th>Updated</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {stats.recentBoards.map((b) => (
-                        <tr key={b.id}>
-                          <td>{b.name || "Untitled"}</td>
-                          <td className={styles.mutedCell}>
-                            {b.user.name || b.user.email || "—"}
-                          </td>
-                          <td className={styles.mutedCell}>
-                            {timeAgo(b.updatedAt)}
-                          </td>
-                        </tr>
-                      ))}
-                      {stats.recentBoards.length === 0 && (
+                {/* Recent boards */}
+                <div className={styles.tableCard}>
+                    <h3 className={styles.tableTitle}>Recent Boards</h3>
+                    <div className={styles.tableWrap}>
+                    <table className={styles.table}>
+                        <thead>
                         <tr>
-                          <td colSpan={3} className={styles.emptyCell}>
-                            No boards yet
-                          </td>
+                            <th>Board</th>
+                            <th>Owner</th>
+                            <th>Updated</th>
                         </tr>
-                      )}
-                    </tbody>
-                  </table>
+                        </thead>
+                        <tbody>
+                        {stats.recentBoards.map((b) => (
+                            <tr key={b.id}>
+                            <td>{b.name || "Untitled"}</td>
+                            <td className={styles.mutedCell}>
+                                {b.user.name || b.user.email || "—"}
+                            </td>
+                            <td className={styles.mutedCell}>
+                                {timeAgo(b.updatedAt)}
+                            </td>
+                            </tr>
+                        ))}
+                        {stats.recentBoards.length === 0 && (
+                            <tr>
+                            <td colSpan={3} className={styles.emptyCell}>
+                                No boards yet
+                            </td>
+                            </tr>
+                        )}
+                        </tbody>
+                    </table>
+                    </div>
                 </div>
-              </div>
-            </section>
-          </>
-        )}
-      </main>
+                </section>
+            </>
+            )}
+        </main>
+      </div>
     </div>
   );
 }
@@ -369,5 +401,29 @@ function SessionIcon() {
 function AvgIcon() {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg>
+  );
+}
+
+function LayoutIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg>
+  );
+}
+
+function SettingsIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
+  );
+}
+
+function LogOutIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" x2="9" y1="12" y2="12" /></svg>
+  );
+}
+
+function RefreshIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10" /><path d="M20.49 15a9 9 0 0 1-14.85 3.36L1 14" /></svg>
   );
 }

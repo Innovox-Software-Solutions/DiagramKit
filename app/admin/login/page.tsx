@@ -6,8 +6,8 @@ import styles from "./login.module.css";
 
 export default function AdminLoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("info@innovox.in");
-  const [password, setPassword] = useState("innovox@2709");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [shake, setShake] = useState(false);
@@ -59,6 +59,7 @@ export default function AdminLoginPage() {
       <form
         onSubmit={handleLogin}
         className={`${styles.card} ${shake ? styles.shake : ""}`}
+        autoComplete="off"
       >
         {/* Logo */}
         <div className={styles.logoRow}>
@@ -97,7 +98,7 @@ export default function AdminLoginPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="admin@example.com"
-              autoComplete="email"
+              autoComplete="off"
             />
           </div>
         </div>
@@ -129,7 +130,7 @@ export default function AdminLoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
-              autoComplete="current-password"
+              autoComplete="new-password"
             />
             <button
               type="button"
