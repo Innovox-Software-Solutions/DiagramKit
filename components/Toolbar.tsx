@@ -1,5 +1,5 @@
 import React from 'react';
-import { MousePointer2, Pencil, Square, Circle, Diamond, ArrowRight, Type, ImagePlus, Trash2, Undo2, Redo2, Plus, Minus, Download, Share2, Upload } from 'lucide-react';
+import { MousePointer2, Hand, Pencil, Square, Circle, Diamond, ArrowRight, Type, ImagePlus, Trash2, Undo2, Redo2, Plus, Minus, Download, Share2, Upload } from 'lucide-react';
 import { ToolType } from '@/types/shape';
 import styles from './Toolbar.module.css';
 
@@ -43,6 +43,13 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                     title="Pointer"
                 >
                     <MousePointer2 size={18} />
+                </button>
+                <button
+                    className={`${styles.iconButton} ${currentTool === 'hand' ? styles.active : ''}`}
+                    onClick={() => setCurrentTool('hand')}
+                    title="Hand Tool"
+                >
+                    <Hand size={18} />
                 </button>
                 <button
                     className={`${styles.iconButton} ${currentTool === 'pencil' ? styles.active : ''}`}

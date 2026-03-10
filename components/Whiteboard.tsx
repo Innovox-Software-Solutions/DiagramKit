@@ -38,6 +38,7 @@ const getToolCursor = (tool: ToolType): string => {
     if (tool === 'text') return 'text';
     if (tool === 'delete') return 'not-allowed';
     if (tool === 'pointer') return 'default';
+    if (tool === 'hand') return 'grab';
     if (tool === 'elbow-arrow') return 'crosshair';
     return 'crosshair';
 };
@@ -594,8 +595,8 @@ export const Whiteboard: React.FC = () => {
         e.preventDefault();
         (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
 
-        // Middle click or Space + Drag to pan
-        if (e.button === 1 || (e.button === 0 && isSpacePressedRef.current)) {
+        // Middle click or Space + Drag or Hand tool to pan
+        if (e.button === 1 || (e.button === 0 && isSpacePressedRef.current) || currentTool === 'hand') {
             setCanvasCursor('grabbing');
             setIsPanning(true);
             setStartPoint({ x: e.clientX, y: e.clientY });

@@ -50,6 +50,10 @@
     cursor: default;
 }
 
+.canvas.tool-hand {
+    cursor: grab;
+}
+
 .canvas.tool-rectangle,
 .canvas.tool-pencil,
 .canvas.tool-circle,

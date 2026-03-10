@@ -39,7 +39,7 @@ export interface Shape {
     points?: Point[];
 }
 
-export type ToolType = "pointer" | "pencil" | "rectangle" | "circle" | "arrow" | "elbow-arrow" | "curve-arrow" | "diamond" | "text" | "rounded-rectangle" | "delete";
+export type ToolType = "pointer" | "pencil" | "rectangle" | "circle" | "arrow" | "elbow-arrow" | "curve-arrow" | "diamond" | "text" | "rounded-rectangle" | "delete" | "hand";
 
 export interface Point {
     x: number;
