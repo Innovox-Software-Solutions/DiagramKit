@@ -17,7 +17,6 @@ interface RecentUser {
   image: string | null;
 }
 interface UserListItem extends RecentUser {
-    createdAt: string;
     _count: { boards: number };
 }
 
@@ -172,6 +171,19 @@ export default function AdminDashboard() {
     const hrs = Math.floor(mins / 60);
     if (hrs < 24) return `${hrs}h ago`;
     return `${Math.floor(hrs / 24)}d ago`;
+  };
+
+  const getCreatedAtFromId = (id: string) => {
+    // Assuming 24-char hex ObjectID: first 8 chars are timestamp
+    if (id && id.length === 24) {
+      try {
+        const timestamp = parseInt(id.substring(0, 8), 16) * 1000;
+        return new Date(timestamp).toLocaleDateString();
+      } catch (e) {
+        return "—";
+      }
+    }
+    return "—";
   };
 
   if (typeof window !== "undefined" && sessionStorage.getItem("admin_auth") !== "true") {
@@ -466,7 +478,7 @@ export default function AdminDashboard() {
                             </td>
                             <td className={styles.mutedCell}>{u.email || "—"}</td>
                             <td className={styles.mutedCell}>{u._count?.boards || 0}</td>
-                            <td className={styles.mutedCell}>{new Date(u.createdAt).toLocaleDateString()}</td>
+                            <td className={styles.mutedCell}>{getCreatedAtFromId(u.id)}</td>
                             </tr>
                         ))}
                         {usersList.length === 0 && (
