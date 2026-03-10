@@ -23,7 +23,9 @@ export const metadata: Metadata = {
   title: "DiagramKit - Collaborative Whiteboard",
   description: "Create and share diagrams with ease",
   icons: {
-    icon: "/logo.png",
+    icon: [{ url: "/logo.png", type: "image/png" }],
+    shortcut: "/logo.png",
+    apple: "/logo.png",
   },
 };
 
