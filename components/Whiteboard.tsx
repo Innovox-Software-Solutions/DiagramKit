@@ -142,6 +142,7 @@ export const Whiteboard: React.FC = () => {
     const activePointersRef = useRef<Map<number, Point>>(new Map());
     const initialPinchDistanceRef = useRef<number | null>(null);
     const initialScaleRef = useRef<number>(1);
+    const doubleTapStartRef = useRef<{ time: number; x: number; y: number } | null>(null);
 
     const minimapCanvasRef = useRef<HTMLCanvasElement>(null);
     const minimapTransformRef = useRef<{ scale: number; panX: number; panY: number } | null>(null);
@@ -611,6 +612,24 @@ export const Whiteboard: React.FC = () => {
 
     const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
         e.preventDefault();
+
+        // ------------------------------------------------------------------
+        // Mobile/Touch Double Tap Handling
+        // ------------------------------------------------------------------
+        // Standard dblclick is often suppressed by preventing default on touch
+        // or by browser zoom/scroll logic. We detect it manually here.
+        const now = Date.now();
+        const lastTap = doubleTapStartRef.current;
+        if (lastTap && (now - lastTap.time < 500)) {
+            const dist = Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y);
+            if (dist < 20) {
+                performDoubleTapAction(e.clientX, e.clientY);
+                doubleTapStartRef.current = null;
+                return;
+            }
+        }
+        doubleTapStartRef.current = { time: now, x: e.clientX, y: e.clientY };
+
         (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
 
         // Update active pointers
@@ -1306,16 +1325,16 @@ export const Whiteboard: React.FC = () => {
         arrowDraftRef.current = null;
     };
 
-    const handleDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const performDoubleTapAction = (clientX: number, clientY: number) => {
         // Double click creates text or edits existing text
-        if (currentTool !== 'pointer' && currentTool !== 'text') return;
+        if (currentTool !== 'pointer' && currentTool !== 'text' && currentTool !== 'hand') return;
 
         const rect = canvasRef.current?.getBoundingClientRect();
         if (!rect) return;
 
         const point = {
-            x: (e.clientX - rect.left - panOffset.x) / scale,
-            y: (e.clientY - rect.top - panOffset.y) / scale
+            x: (clientX - rect.left - panOffset.x) / scale,
+            y: (clientY - rect.top - panOffset.y) / scale
         };
 
         // Check if double clicking on existing text shape
@@ -2395,7 +2414,6 @@ export const Whiteboard: React.FC = () => {
                     onPointerUp={handlePointerUp}
                     onPointerCancel={handlePointerUp}
                     onPointerLeave={() => setCanvasCursor(isSpacePressedRef.current ? 'grab' : getToolCursor(currentTool))}
-                    onDoubleClick={handleDoubleClick}
                     tabIndex={0}
                 />
 
