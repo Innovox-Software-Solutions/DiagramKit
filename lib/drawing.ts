@@ -12,11 +12,20 @@ const getMeasureCtx = () => {
     return measureCtx;
 };
 
-export const measureText = (text: string, fontSize: number): { width: number, height: number } => {
+const getResolvedFont = (family?: string): string => {
+    if (family === 'Lobster Two' && typeof document !== 'undefined') {
+        const style = getComputedStyle(document.body).getPropertyValue('--font-lobster-two');
+        if (style) return style.trim().replace(/"/g, "'");
+    }
+    return family || 'sans-serif';
+};
+
+export const measureText = (text: string, fontSize: number, fontFamily?: string): { width: number, height: number } => {
     const ctx = getMeasureCtx();
     if (ctx) {
+        const resolvedFont = getResolvedFont(fontFamily);
         ctx.save();
-        ctx.font = `${fontSize}px sans-serif`;
+        ctx.font = `${fontSize}px ${resolvedFont}`;
         const metrics = ctx.measureText(text);
         ctx.restore();
         return {
@@ -229,7 +238,8 @@ export const renderShapes = (
             case "text":
                 if (shape.text) {
                     const fontSize = shape.fontSize || 20;
-                    ctx.font = `${fontSize}px sans-serif`;
+                    const resolvedFont = getResolvedFont(shape.fontFamily);
+                    ctx.font = `${fontSize}px ${resolvedFont}`;
                     ctx.fillStyle = shape.strokeColor; // Use stroke color for text color
                     ctx.textBaseline = "top";
                     ctx.fillText(shape.text, shape.x, shape.y);

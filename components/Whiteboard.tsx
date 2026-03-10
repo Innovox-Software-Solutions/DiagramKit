@@ -108,7 +108,7 @@ export const Whiteboard: React.FC = () => {
     const [scale, setScale] = useState(1);
 
     // Text editing state
-    const [editingText, setEditingText] = useState<{ id: string, text: string, x: number, y: number, fontSize: number } | null>(null);
+    const [editingText, setEditingText] = useState<{ id: string, text: string, x: number, y: number, fontSize: number, fontFamily?: string } | null>(null);
     const textInputRef = useRef<HTMLTextAreaElement>(null);
 
     // Export Modal State
@@ -1357,7 +1357,7 @@ export const Whiteboard: React.FC = () => {
     // Text tool commit
     const commitTextEdit = () => {
         if (editingText && editingText.text.trim().length > 0) {
-            const dims = measureText(editingText.text, editingText.fontSize);
+            const dims = measureText(editingText.text, editingText.fontSize, editingText.fontFamily);
             const newShape: Shape = {
                 id: editingText.id,
                 type: 'text',
@@ -1370,9 +1370,22 @@ export const Whiteboard: React.FC = () => {
                 strokeWidth: DEFAULT_STROKE_WIDTH,
                 strokeStyle: DEFAULT_STROKE_STYLE,
                 text: editingText.text,
-                fontSize: editingText.fontSize
+                fontSize: editingText.fontSize,
+                fontFamily: editingText.fontFamily,
             };
-            saveHistory([...shapes, newShape]);
+            // Remove any shape with same ID before adding (in case we edited existing)
+            // But wait, commitTextEdit is called onBlur. 
+            // In creation mode, shape doesn't exist.
+            // In editing mode, we removed it from shapes array in handleDoubleClick.
+            // So appending should work if we remove it first?
+            // Actually handleDoubleClick removes it.
+            // But verify logic.
+            
+            // Re-use logic: saveHistory appends.
+            // If existing, it was removed from state?
+            // Let's check handleDoubleClick logic again.
+            
+            saveHistory([...shapes.filter(s => s.id !== editingText.id), newShape]);
             setSelectedShapeIds([newShape.id]);
         }
         setEditingText(null);

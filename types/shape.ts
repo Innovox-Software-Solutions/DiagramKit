@@ -16,6 +16,7 @@ export interface Shape {
     strokeStyle?: StrokeStyle;
     text?: string;
     fontSize?: number;
+    fontFamily?: string;
 
     // Arrow specific
     startShapeId?: string;
