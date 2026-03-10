@@ -20,20 +20,33 @@ const getResolvedFont = (family?: string): string => {
     return family || 'sans-serif';
 };
 
-export const measureText = (text: string, fontSize: number, fontFamily?: string): { width: number, height: number } => {
+export const measureText = (text: string, fontSize: number, fontFamily?: string, fontWeight?: string, fontStyle?: string): { width: number, height: number } => {
     const ctx = getMeasureCtx();
-    if (ctx) {
+    if (ctx && text) {
         const resolvedFont = getResolvedFont(fontFamily);
+        const resolvedWeight = fontWeight || 'normal';
+        const resolvedStyle = fontStyle || 'normal';
         ctx.save();
-        ctx.font = `${fontSize}px ${resolvedFont}`;
-        const metrics = ctx.measureText(text);
+        ctx.font = `${resolvedStyle} ${resolvedWeight} ${fontSize}px ${resolvedFont}`;
+        
+        const lines = text.split('\n');
+        let maxWidth = 0;
+        const lineHeight = fontSize * 1.25;
+
+        lines.forEach(line => {
+             const metrics = ctx.measureText(line);
+             if (metrics.width > maxWidth) {
+                 maxWidth = metrics.width;
+             }
+        });
+
         ctx.restore();
         return {
-            width: metrics.width,
-            height: fontSize * 1.2 // approximate line height
+            width: maxWidth,
+            height: lines.length * lineHeight
         };
     }
-    return { width: 100, height: fontSize * 1.2 };
+    return { width: 100, height: fontSize * 1.25 };
 };
 
 const getPencilAbsolutePoints = (shape: Shape): Point[] => {
@@ -239,10 +252,30 @@ export const renderShapes = (
                 if (shape.text) {
                     const fontSize = shape.fontSize || 20;
                     const resolvedFont = getResolvedFont(shape.fontFamily);
-                    ctx.font = `${fontSize}px ${resolvedFont}`;
+                    const fontWeight = shape.fontWeight || 'normal';
+                    const fontStyle = shape.fontStyle || 'normal';
+                    
+                    ctx.font = `${fontStyle} ${fontWeight} ${fontSize}px ${resolvedFont}`;
                     ctx.fillStyle = shape.strokeColor; // Use stroke color for text color
                     ctx.textBaseline = "top";
-                    ctx.fillText(shape.text, shape.x, shape.y);
+
+                    const lines = shape.text.split('\n');
+                    const lineHeight = fontSize * 1.25;
+
+                    lines.forEach((line, index) => {
+                        const y = shape.y + (index * lineHeight);
+                        ctx.fillText(line, shape.x, y);
+
+                        if (shape.textDecoration === 'underline') {
+                            const metrics = ctx.measureText(line);
+                            ctx.beginPath();
+                            ctx.moveTo(shape.x, y + fontSize);
+                            ctx.lineTo(shape.x + metrics.width, y + fontSize);
+                            ctx.lineWidth = Math.max(1, fontSize / 15);
+                            ctx.stroke();
+                        }
+                    });
+
                     // Optional: Render bounding box for debug or during edit
                 }
                 break;

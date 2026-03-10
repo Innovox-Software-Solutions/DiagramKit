@@ -108,7 +108,18 @@ export const Whiteboard: React.FC = () => {
     const [scale, setScale] = useState(1);
 
     // Text editing state
-    const [editingText, setEditingText] = useState<{ id: string, text: string, x: number, y: number, fontSize: number, fontFamily?: string } | null>(null);
+    const [editingText, setEditingText] = useState<{ 
+        id: string;
+        text: string;
+        x: number;
+        y: number;
+        fontSize: number;
+        fontFamily?: string;
+        fontWeight?: string;
+        fontStyle?: string;
+        textDecoration?: string;
+        strokeColor?: string;
+    } | null>(null);
     const textInputRef = useRef<HTMLTextAreaElement>(null);
 
     // Export Modal State
@@ -720,7 +731,18 @@ export const Whiteboard: React.FC = () => {
             // Just start text editing
             setCanvasCursor('text');
             const newId = uuidv4();
-            setEditingText({ id: newId, text: '', x: point.x, y: point.y, fontSize: 20, fontFamily: 'Lobster Two' });
+            setEditingText({ 
+                id: newId, 
+                text: '', 
+                x: point.x, 
+                y: point.y, 
+                fontSize: 20, 
+                fontFamily: 'Lobster Two',
+                fontWeight: '400',
+                fontStyle: 'normal',
+                textDecoration: 'none',
+                strokeColor: DEFAULT_STROKE_COLOR
+            });
             setCurrentTool('pointer');
             setTimeout(() => textInputRef.current?.focus(), 0);
         } else {
@@ -1181,13 +1203,28 @@ export const Whiteboard: React.FC = () => {
                 x: hitTextShape.x, 
                 y: hitTextShape.y, 
                 fontSize: hitTextShape.fontSize || 20,
-                fontFamily: hitTextShape.fontFamily || 'Lobster Two'
+                fontFamily: hitTextShape.fontFamily || 'Lobster Two',
+                fontWeight: hitTextShape.fontWeight || '400',
+                fontStyle: hitTextShape.fontStyle || 'normal',
+                textDecoration: hitTextShape.textDecoration || 'none',
+                strokeColor: hitTextShape.strokeColor
             });
             // Hide the actual shape while editing so it doesn't double-render
             setShapes(prev => prev.filter(s => s.id !== hitTextShape!.id));
         } else {
             // Create New
-            setEditingText({ id: uuidv4(), text: '', x: point.x, y: point.y, fontSize: 20, fontFamily: 'Lobster Two' });
+            setEditingText({ 
+                id: uuidv4(), 
+                text: '', 
+                x: point.x, 
+                y: point.y, 
+                fontSize: 20, 
+                fontFamily: 'Lobster Two',
+                fontWeight: '400',
+                fontStyle: 'normal',
+                textDecoration: 'none',
+                strokeColor: DEFAULT_STROKE_COLOR
+            });
         }
 
         setCurrentTool('pointer');
@@ -1364,7 +1401,7 @@ export const Whiteboard: React.FC = () => {
     // Text tool commit
     const commitTextEdit = () => {
         if (editingText && editingText.text.trim().length > 0) {
-            const dims = measureText(editingText.text, editingText.fontSize, editingText.fontFamily);
+            const dims = measureText(editingText.text, editingText.fontSize, editingText.fontFamily, editingText.fontWeight, editingText.fontStyle);
             const newShape: Shape = {
                 id: editingText.id,
                 type: 'text',
@@ -1372,26 +1409,18 @@ export const Whiteboard: React.FC = () => {
                 y: editingText.y,
                 width: dims.width,
                 height: dims.height,
-                strokeColor: DEFAULT_STROKE_COLOR,
+                strokeColor: editingText.strokeColor || DEFAULT_STROKE_COLOR,
                 fillColor: 'transparent',
                 strokeWidth: DEFAULT_STROKE_WIDTH,
                 strokeStyle: DEFAULT_STROKE_STYLE,
                 text: editingText.text,
                 fontSize: editingText.fontSize,
                 fontFamily: editingText.fontFamily,
+                fontWeight: editingText.fontWeight,
+                fontStyle: editingText.fontStyle,
+                textDecoration: editingText.textDecoration,
             };
             // Remove any shape with same ID before adding (in case we edited existing)
-            // But wait, commitTextEdit is called onBlur. 
-            // In creation mode, shape doesn't exist.
-            // In editing mode, we removed it from shapes array in handleDoubleClick.
-            // So appending should work if we remove it first?
-            // Actually handleDoubleClick removes it.
-            // But verify logic.
-            
-            // Re-use logic: saveHistory appends.
-            // If existing, it was removed from state?
-            // Let's check handleDoubleClick logic again.
-            
             saveHistory([...shapes.filter(s => s.id !== editingText.id), newShape]);
             setSelectedShapeIds([newShape.id]);
         }
@@ -2218,17 +2247,113 @@ export const Whiteboard: React.FC = () => {
                         style={{
                             left: editingText.x * scale + panOffset.x,
                             top: editingText.y * scale + panOffset.y,
-                            color: DEFAULT_STROKE_COLOR,
+                            color: editingText.strokeColor || '#000000',
                             fontSize: `${editingText.fontSize}px`,
+                            lineHeight: 1.25,
                             fontFamily: editingText.fontFamily === 'Lobster Two' ? 'var(--font-lobster-two)' : 'sans-serif',
+                            fontWeight: editingText.fontWeight || 'normal',
+                            fontStyle: editingText.fontStyle || 'normal',
+                            textDecoration: editingText.textDecoration || 'none',
                             transform: `scale(${scale})`,
                             transformOrigin: 'top left',
                         }}
                         value={editingText.text}
                         onChange={(e) => setEditingText({ ...editingText, text: e.target.value })}
-                        onBlur={commitTextEdit}
+                        spellCheck={false}
+                        onBlur={(e) => {
+                             // Only commit if we aren't clicking the toolbar
+                             // But toolbar is inside the same parent div?
+                             // No, toolbar is sibling.
+                             // Actually, using onMouseDown={e.preventDefault()} on toolbar buttons usually prevents blur.
+                             // But let's verify.
+                             commitTextEdit();
+                        }}
                         autoFocus
                     />
+                )}
+                
+                {editingText && (
+                    <div 
+                        className={styles.textToolbarWrapper}
+                        style={{
+                            position: 'absolute',
+                            left: editingText.x * scale + panOffset.x,
+                            top: (editingText.y * scale + panOffset.y) - 60,
+                            display: 'flex',
+                            gap: 8,
+                            padding: 8,
+                            background: '#1e1e1e',
+                            borderRadius: 8,
+                            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                            zIndex: 100,
+                            pointerEvents: 'auto'
+                        }}
+                        onMouseDown={(e) => e.preventDefault()} // Prevent blur when clicking toolbar
+                    >
+                       <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                           <button 
+                                style={{ padding: '4px 8px', borderRadius: 4, background: editingText.fontFamily === 'Lobster Two' ? '#444' : 'transparent', color: '#fff', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-lobster-two)' }}
+                                onClick={() => setEditingText({ ...editingText, fontFamily: editingText.fontFamily === 'Lobster Two' ? 'sans-serif' : 'Lobster Two' })}>
+                               F
+                           </button>
+                           <button 
+                                style={{ padding: '4px 8px', borderRadius: 4, background: editingText.fontWeight === 'bold' ? '#444' : 'transparent', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}
+                                onClick={() => setEditingText({ ...editingText, fontWeight: editingText.fontWeight === 'bold' ? 'normal' : 'bold' })}>
+                               B
+                           </button>
+                           <button 
+                                style={{ padding: '4px 8px', borderRadius: 4, background: editingText.fontStyle === 'italic' ? '#444' : 'transparent', color: '#fff', border: 'none', cursor: 'pointer', fontStyle: 'italic' }}
+                                onClick={() => setEditingText({ ...editingText, fontStyle: editingText.fontStyle === 'italic' ? 'normal' : 'italic' })}>
+                               I
+                           </button>
+                           <button 
+                                style={{ padding: '4px 8px', borderRadius: 4, background: editingText.textDecoration === 'underline' ? '#444' : 'transparent', color: '#fff', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
+                                onClick={() => setEditingText({ ...editingText, textDecoration: editingText.textDecoration === 'underline' ? 'none' : 'underline' })}>
+                               U
+                           </button>
+                           <div style={{ width: 1, height: 20, background: '#444', margin: '0 4px' }} />
+                           <input type="color" value={editingText.strokeColor || '#000000'} 
+                                onChange={(e) => setEditingText({ ...editingText, strokeColor: e.target.value })}
+                                style={{ width: 24, height: 24, padding: 0, border: 'none', background: 'transparent', cursor: 'pointer' }}
+                           />
+                       </div>
+                       <div style={{ width: 1, height: 20, background: '#444', margin: '0 4px' }} />
+                       <div style={{ display: 'flex', gap: 4 }}>
+                           <button style={{ padding: '4px 8px', borderRadius: 4, background: 'transparent', color: '#fff', border: 'none', cursor: 'pointer' }}
+                                onClick={() => {
+                                    setEditingText({ ...editingText, text: editingText.text + (editingText.text.length > 0 && !editingText.text.endsWith('\n') ? '\n• ' : '• ') }); 
+                                    textInputRef.current?.focus(); 
+                                }}>
+                               •
+                           </button>
+                           <button style={{ padding: '4px 8px', borderRadius: 4, background: 'transparent', color: '#fff', border: 'none', cursor: 'pointer' }}
+                                onClick={() => {
+                                    setEditingText({ ...editingText, text: editingText.text + (editingText.text.length > 0 && !editingText.text.endsWith('\n') ? '\n→ ' : '→ ') }); 
+                                    textInputRef.current?.focus(); 
+                                }}>
+                               →
+                           </button>
+                           <button style={{ padding: '4px 8px', borderRadius: 4, background: 'transparent', color: '#fff', border: 'none', cursor: 'pointer' }}
+                                onClick={() => {
+                                    setEditingText({ ...editingText, text: editingText.text + (editingText.text.length > 0 && !editingText.text.endsWith('\n') ? '\n1. ' : '1. ') }); 
+                                    textInputRef.current?.focus(); 
+                                }}>
+                               1.
+                           </button>
+                           <button style={{ padding: '4px 8px', borderRadius: 4, background: 'transparent', color: '#fff', border: 'none', cursor: 'pointer' }}
+                                onClick={() => {
+                                    setEditingText({ ...editingText, text: editingText.text + (editingText.text.length > 0 && !editingText.text.endsWith('\n') ? '\na. ' : 'a. ') }); 
+                                    textInputRef.current?.focus(); 
+                                }}>
+                               a.
+                           </button>
+                       </div>
+                       <div style={{ width: 1, height: 20, background: '#444', margin: '0 4px' }} />
+                       <div style={{ display: 'flex', gap: 4 }}>
+                           <button style={{ padding: '4px 8px', borderRadius: 4, background: 'transparent', color: '#fff', border: 'none', cursor: 'pointer' }} onClick={() => setEditingText({ ...editingText, fontSize: (editingText.fontSize || 20) + 2 })}>A+</button>
+                           <button style={{ padding: '4px 8px', borderRadius: 4, background: 'transparent', color: '#fff', border: 'none', cursor: 'pointer' }} onClick={() => setEditingText({ ...editingText, fontSize: Math.max(8, (editingText.fontSize || 20) - 2) })}>A-</button>
+                       </div>
+                    </div>
                 )}
             </div>
 

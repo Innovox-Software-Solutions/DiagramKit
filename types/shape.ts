@@ -17,6 +17,10 @@ export interface Shape {
     text?: string;
     fontSize?: number;
     fontFamily?: string;
+    fontWeight?: string;
+    fontStyle?: string;
+    textDecoration?: string;
+    textAlign?: "left" | "center" | "right";
 
     // Arrow specific
     startShapeId?: string;
