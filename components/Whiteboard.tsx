@@ -720,7 +720,7 @@ export const Whiteboard: React.FC = () => {
             // Just start text editing
             setCanvasCursor('text');
             const newId = uuidv4();
-            setEditingText({ id: newId, text: '', x: point.x, y: point.y, fontSize: 20 });
+            setEditingText({ id: newId, text: '', x: point.x, y: point.y, fontSize: 20, fontFamily: 'Lobster Two' });
             setCurrentTool('pointer');
             setTimeout(() => textInputRef.current?.focus(), 0);
         } else {
@@ -1175,12 +1175,19 @@ export const Whiteboard: React.FC = () => {
 
         if (hitTextShape) {
             // Edit existing
-            setEditingText({ id: hitTextShape.id, text: hitTextShape.text || '', x: hitTextShape.x, y: hitTextShape.y, fontSize: hitTextShape.fontSize || 20 });
+            setEditingText({ 
+                id: hitTextShape.id, 
+                text: hitTextShape.text || '', 
+                x: hitTextShape.x, 
+                y: hitTextShape.y, 
+                fontSize: hitTextShape.fontSize || 20,
+                fontFamily: hitTextShape.fontFamily || 'Lobster Two'
+            });
             // Hide the actual shape while editing so it doesn't double-render
             setShapes(prev => prev.filter(s => s.id !== hitTextShape!.id));
         } else {
             // Create New
-            setEditingText({ id: uuidv4(), text: '', x: point.x, y: point.y, fontSize: 20 });
+            setEditingText({ id: uuidv4(), text: '', x: point.x, y: point.y, fontSize: 20, fontFamily: 'Lobster Two' });
         }
 
         setCurrentTool('pointer');
@@ -2213,6 +2220,7 @@ export const Whiteboard: React.FC = () => {
                             top: editingText.y * scale + panOffset.y,
                             color: DEFAULT_STROKE_COLOR,
                             fontSize: `${editingText.fontSize}px`,
+                            fontFamily: editingText.fontFamily === 'Lobster Two' ? 'var(--font-lobster-two)' : 'sans-serif',
                             transform: `scale(${scale})`,
                             transformOrigin: 'top left',
                         }}
