@@ -22,6 +22,9 @@ const lobsterTwo = Lobster_Two({
 export const metadata: Metadata = {
   title: "DiagramKit - Collaborative Whiteboard",
   description: "Create and share diagrams with ease",
+  icons: {
+    icon: "/logo.png",
+  },
 };
 
 export const viewport: Viewport = {
