@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Lobster_Two } from "next/font/google";
 import SessionProvider from "@/components/SessionProvider";
 import "./globals.css";
@@ -22,6 +22,13 @@ const lobsterTwo = Lobster_Two({
 export const metadata: Metadata = {
   title: "DiagramKit - Collaborative Whiteboard",
   description: "Create and share diagrams with ease",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
 };
 
 export default function RootLayout({
