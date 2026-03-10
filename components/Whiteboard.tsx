@@ -139,6 +139,9 @@ export const Whiteboard: React.FC = () => {
     const zoomCursorTimeoutRef = useRef<number | null>(null);
     const [canvasCursor, setCanvasCursor] = useState('default');
     const isSpacePressedRef = useRef(false);
+    const activePointersRef = useRef<Map<number, Point>>(new Map());
+    const initialPinchDistanceRef = useRef<number | null>(null);
+    const initialScaleRef = useRef<number>(1);
 
     const minimapCanvasRef = useRef<HTMLCanvasElement>(null);
     const minimapTransformRef = useRef<{ scale: number; panX: number; panY: number } | null>(null);
@@ -591,9 +594,47 @@ export const Whiteboard: React.FC = () => {
         return null;
     };
 
+    const getPinchDistance = (pointers: Map<number, Point>) => {
+        const points = Array.from(pointers.values());
+        if (points.length < 2) return 0;
+        return MathUtils.distance(points[0], points[1]);
+    };
+
+    const getPinchCenter = (pointers: Map<number, Point>) => {
+        const points = Array.from(pointers.values());
+        if (points.length < 2) return { x: 0, y: 0 };
+        return {
+            x: (points[0].x + points[1].x) / 2,
+            y: (points[0].y + points[1].y) / 2
+        };
+    };
+
     const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
         e.preventDefault();
         (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
+
+        // Update active pointers
+        const rect = (e.target as HTMLElement).getBoundingClientRect();
+        activePointersRef.current.set(e.pointerId, {
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top
+        });
+
+        // 2-finger pinch gesture
+        if (activePointersRef.current.size === 2) {
+            // Cancel any single-finger actions
+            setIsDrawing(false);
+            setIsPanning(false);
+            setIsDragging(false);
+            setIsResizing(null);
+            setSelectionBox(null);
+            setStartPoint(null);
+            setCurrentPoint(null);
+            
+            initialPinchDistanceRef.current = getPinchDistance(activePointersRef.current);
+            initialScaleRef.current = scale;
+            return;
+        }
 
         // Middle click or Space + Drag or Hand tool to pan
         if (e.button === 1 || (e.button === 0 && isSpacePressedRef.current) || currentTool === 'hand') {
@@ -757,6 +798,92 @@ export const Whiteboard: React.FC = () => {
     };
 
     const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+        // Update active pointer position if previously captured
+        if (activePointersRef.current.has(e.pointerId)) {
+            const rect = (e.target as HTMLElement).getBoundingClientRect();
+            activePointersRef.current.set(e.pointerId, {
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top
+            });
+        }
+
+        // Pinch-to-Zoom logic
+        if (activePointersRef.current.size === 2) {
+            const currentDist = getPinchDistance(activePointersRef.current);
+            const initialDist = initialPinchDistanceRef.current;
+
+            if (initialDist && currentDist > 0) {
+                const center = getPinchCenter(activePointersRef.current);
+                const rect = (e.target as HTMLElement).getBoundingClientRect();
+                // Center relative to the canvas viewport (not document)
+                // e.clientX is viewport relative, center calculation already based on clientX/Y - rect.left/top
+                
+                // Calculate new scale
+                const scaleFactor = currentDist / initialDist;
+                const newScale = Math.min(Math.max(0.1, initialScaleRef.current * scaleFactor), 5);
+
+                // Calculate pan offset to keep center point stable
+                // P_screen = P_world * scale + panOffset
+                // We want P_world at center to remain at P_screen center
+                // P_world = (center - oldPan) / oldScale
+                // newPan = center - P_world * newScale
+                
+                const oldScale = scale;
+                // Note: We use the immediate previous scale for smooth updates if we were incrementally updating,
+                // but here we base on initial snapshot. This is better for stability.
+                
+                // Wait, if we use initialScaleRef, we calculate absolute new scale.
+                // We need the world coordinate of the center point at the START of pinch?
+                // Or dynamic? Dynamic is usually better for "following" fingers.
+                // Let's use the standard "zoom towards point" diff approach.
+                
+                // Simpler: 
+                // newPanX = center.x - (center.x - panOffset.x) * (newScale / scale);
+                // But `scale` in state might lag.
+                
+                // Let's stick to state updates. 
+                // To avoid jitter, we might want to defer this or use the ref values if we updated them?
+                // React state updates are batched. 
+                
+                // Let's use the formula:
+                // deltaScale = newScale / scale
+                // newPan = center - (center - currentPan) * deltaScale
+                
+                // However, we are calculating absolute newScale from initial.
+                // So we can compute world point using initial params? 
+                // No, standard pinch zoom implementation usually just computes delta from previous frame.
+                // But here events fire rapidly.
+                
+                // Let's try direct calculation:
+                // P_world = (center - panOffset) / scale
+                // newPan = center - P_world * newScale
+                
+                // This relies on `scale` and `panOffset` being up to date.
+                // If they lag, zooming might wobble.
+                // But usually acceptable in React 18+.
+
+                const worldX = (center.x - panOffset.x) / scale;
+                const worldY = (center.y - panOffset.y) / scale;
+                
+                const nextPanX = center.x - worldX * newScale;
+                const nextPanY = center.y - worldY * newScale;
+
+                setScale(newScale);
+                setPanOffset({ x: nextPanX, y: nextPanY });
+                
+                // Reset initial distance for next movement to treat as incremental?
+                // If we do incremental:
+                // initialPinchDistanceRef.current = currentDist;
+                // initialScaleRef.current = newScale;
+                // This prevents "snap back" if pointers jitter but accumulates error?
+                // Incremental is usually smoother for "continuous" feel.
+                
+                initialPinchDistanceRef.current = currentDist;
+                initialScaleRef.current = newScale; 
+            }
+            return;
+        }
+
         if (isPanning && startPoint) {
             setCanvasCursor('grabbing');
             setPanOffset({
@@ -1030,6 +1157,11 @@ export const Whiteboard: React.FC = () => {
     const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
         (e.target as HTMLCanvasElement).releasePointerCapture(e.pointerId);
 
+        activePointersRef.current.delete(e.pointerId);
+        if (activePointersRef.current.size < 2) {
+            initialPinchDistanceRef.current = null;
+        }
+
         if (isPanning) {
             setIsPanning(false);
             setStartPoint(null);
@@ -1235,11 +1367,13 @@ export const Whiteboard: React.FC = () => {
     const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
         if (e.ctrlKey || e.metaKey) {
             e.preventDefault();
-            // Lowered sensitivity based on user feedback
-            const zoomSensitivity = 0.0005;
-            const delta = -e.deltaY * zoomSensitivity;
-            const newScale = Math.min(Math.max(0.1, scale + delta), 5);
-            showZoomCursor(delta >= 0 ? 'in' : 'out');
+            
+            // Use multiplicative zoom for smoother feel
+            const zoomSensitivity = 0.002;
+            const zoomFactor = Math.exp(-e.deltaY * zoomSensitivity);
+            const newScale = Math.min(Math.max(0.1, scale * zoomFactor), 5);
+            
+            showZoomCursor(newScale > scale ? 'in' : 'out');
 
             // Zoom towards mouse pointer
             const rect = canvasRef.current?.getBoundingClientRect();
@@ -1247,8 +1381,11 @@ export const Whiteboard: React.FC = () => {
                 const mouseX = e.clientX - rect.left;
                 const mouseY = e.clientY - rect.top;
 
-                const newPanX = mouseX - (mouseX - panOffset.x) * (newScale / scale);
-                const newPanY = mouseY - (mouseY - panOffset.y) * (newScale / scale);
+                const worldX = (mouseX - panOffset.x) / scale;
+                const worldY = (mouseY - panOffset.y) / scale;
+
+                const newPanX = mouseX - worldX * newScale;
+                const newPanY = mouseY - worldY * newScale;
 
                 setScale(newScale);
                 setPanOffset({ x: newPanX, y: newPanY });
