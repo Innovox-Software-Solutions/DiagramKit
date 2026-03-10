@@ -745,7 +745,7 @@ export const Whiteboard: React.FC = () => {
         }
 
         const point = getCanvasPoint(e);
-        if (isDrawing && currentTool === 'arrow') {
+        if (isDrawing && (currentTool === 'arrow' || currentTool === 'elbow-arrow')) {
             const snap = findClosestAnchor(point);
             const nextPoint = snap ? snap.point : point;
             setCurrentPoint(nextPoint);
@@ -1077,14 +1077,17 @@ export const Whiteboard: React.FC = () => {
             return;
         }
 
-        if (isDrawing && startPoint && currentPoint && currentTool !== 'pointer' && currentTool !== 'text') {
+        if (isDrawing && startPoint && currentPoint && (currentTool === 'arrow' || currentTool === 'elbow-arrow')) {
             const width = currentPoint.x - startPoint.x;
             const height = currentPoint.y - startPoint.y;
 
             // Smart arrow connection logic
             let startShapeId, endShapeId, startAnchor, endAnchor;
-            if (currentTool === 'arrow') {
+            if (currentTool === 'arrow' || currentTool === 'elbow-arrow') {
                 const draft = arrowDraftRef.current;
+                // If we started on an anchor, use it
+                // If not, try to find one? usually handlePointerDown finds it
+            }
                 const start = draft?.start ?? findClosestAnchor(startPoint);
                 const end = draft?.end ?? findClosestAnchor(currentPoint);
 
