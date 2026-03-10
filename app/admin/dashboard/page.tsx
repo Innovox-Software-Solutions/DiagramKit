@@ -16,11 +16,19 @@ interface RecentUser {
   email: string | null;
   image: string | null;
 }
+interface UserListItem extends RecentUser {
+    createdAt: string;
+    _count: { boards: number };
+}
+
 interface RecentBoard {
   id: string;
   name: string;
   updatedAt: string;
   user: { name: string | null; email: string | null };
+}
+interface BoardListItem extends RecentBoard {
+    createdAt: string;
 }
 interface Stats {
   totalUsers: number;
@@ -84,8 +92,8 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   
-  const [usersList, setUsersList] = useState<RecentUser[]>([]);
-  const [boardsList, setBoardsList] = useState<RecentBoard[]>([]);
+  const [usersList, setUsersList] = useState<UserListItem[]>([]);
+  const [boardsList, setBoardsList] = useState<BoardListItem[]>([]);
   const [listLoading, setListLoading] = useState(false);
 
   // Auth guard
