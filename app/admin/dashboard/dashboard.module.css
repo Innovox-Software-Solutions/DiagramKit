@@ -21,31 +21,38 @@
 /* ========== SIDEBAR ========== */
 .sidebar {
   width: 260px;
-  background: rgba(18, 18, 23, 0.6);
+  background: rgba(18, 18, 23, 0.8);
   border-right: 1px solid rgba(255, 255, 255, 0.06);
   backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   display: flex;
   flex-direction: column;
   padding: 24px;
-  z-index: 20;
+  z-index: 100;
   flex-shrink: 0;
   transition: transform 0.3s ease;
 }
 
 /* Mobile Sidebar Overlay */
 .sidebarOverlay {
-  display: none;
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(4px);
-  z-index: 15;
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 99;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+.sidebarOverlay.open {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 /* Mobile Toggle Button */
-/* Mobile Toggle Button */
 .menuBtn {
-  display: none; /* Hidden by default on desktop */
+  display: none;
   background: transparent;
   border: none;
   color: #fff;
@@ -53,18 +60,28 @@
   padding: 8px;
   border-radius: 8px;
   margin-right: 12px;
+  transition: background 0.2s;
 }
 .menuBtn:hover {
   background: rgba(255, 255, 255, 0.1);
 }
 
 @media (max-width: 768px) {
-  .menuBtn {
-    display: flex; /* Show on mobile */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    transform: translateX(-100%);
   }
-}
-.menuBtn:hover {
-  background: rgba(255, 255, 255, 0.1);
+  .sidebar.open {
+    transform: translateX(0);
+  }
+  .menuBtn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
 }
 
 .brand {
@@ -412,10 +429,44 @@
   padding: 24px 10px !important;
 }
 
+.tableCardFull {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  padding: 24px; /* Slightly more padding for full table */
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  grid-column: 1 / -1; /* Stretch across all columns */
+  overflow: hidden; /* Contain inner table overflow */
+}
+
+.settingsPanel {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  padding: 32px;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  grid-column: 1 / -1;
+  min-height: 400px;
+}
+
 /* ========== RESPONSIVE ========== */
-@media (max-width: 1024px) {
+@media (max-width: 1280px) {
   .statGrid {
     grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 1024px) {
+  .highlightRow {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .highlightCard:last-child {
+    grid-column: span 2;
+  }
+  .chartRow, .tableRow {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -429,9 +480,11 @@
     top: 0;
     left: 0;
     height: 100vh;
-    transform: translateX(-100%);
     width: 280px;
+    transform: translateX(-100%);
     background: #0a0a0f;
+    box-shadow: 4px 0 24px rgba(0,0,0,0.5);
+    z-index: 100;
   }
   
   .sidebar.open {
@@ -449,28 +502,19 @@
     margin-right: 12px;
   }
 
-  /* Content area takes full width */
+  /* Content area full width */
   .contentArea {
     width: 100%;
   }
 
-  .header {
-    padding: 14px 18px;
-  }
   .main {
     padding: 24px 16px 48px;
     gap: 20px;
   }
-  .pageTitle {
-    font-size: 22px;
-  }
+  
   .statGrid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, 1fr);
     gap: 12px;
-  }
-  /* Ensure charts and tables don't overflow */
-  .chartRow, .tableRow {
-    grid-template-columns: 1fr;
   }
   
   .topBar {
@@ -482,15 +526,9 @@
   .header {
     padding: 12px 14px;
   }
-  .logoText {
-    font-size: 18px;
-  }
   .main {
     padding: 18px 12px 40px;
     gap: 16px;
-  }
-  .pageTitle {
-    font-size: 20px;
   }
   .statGrid {
     grid-template-columns: 1fr;
@@ -503,13 +541,17 @@
     grid-template-columns: 1fr;
     gap: 10px;
   }
+  .highlightCard:last-child {
+    grid-column: auto;
+  }
   .highlightCard {
     flex-direction: row;
     justify-content: space-between;
+    align-items: center;
     padding: 14px 18px;
   }
   .highlightNum {
-    font-size: 22px;
+    font-size: 24px;
   }
   .chartCard {
     padding: 16px 14px 12px;
@@ -521,8 +563,7 @@
   .tableCard {
     padding: 16px 14px;
   }
-  .logoutBtn {
-    padding: 7px 14px;
-    font-size: 12px;
+  .pageHeaderTitle {
+    font-size: 20px;
   }
 }

@@ -11,7 +11,12 @@ export async function GET() {
         name: true,
         email: true,
         image: true,
-        // Using session count or similar or verification
+        createdAt: true,
+        _count: {
+            select: {
+                boards: true,
+            }
+        }
       }
     });
     return NextResponse.json(users);
