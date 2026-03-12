@@ -4,9 +4,15 @@ import { NextRequest, NextResponse } from "next/server"
 
 export const runtime = "nodejs"
 
-function getExpectedHost(): string | null {
-  const url = (process.env.AUTH_URL ?? process.env.NEXTAUTH_URL)?.trim()
-  if (!url) return null
+function parseUrls(value: string | undefined): string[] {
+  if (!value) return []
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function toHost(url: string): string | null {
   try {
     return new URL(url).host
   } catch {
@@ -14,16 +20,33 @@ function getExpectedHost(): string | null {
   }
 }
 
+function getAllowedHosts(): Set<string> {
+  const hosts = new Set<string>()
+
+  for (const value of [process.env.AUTH_URL, process.env.NEXTAUTH_URL]) {
+    if (!value) continue
+    const host = toHost(value)
+    if (host) hosts.add(host)
+  }
+
+  for (const value of parseUrls(process.env.APP_URLS)) {
+    const host = toHost(value)
+    if (host) hosts.add(host)
+  }
+
+  return hosts
+}
+
 function isSafeOriginForRequest(req: Request): boolean {
   const originHeader = req.headers.get("origin")
   if (!originHeader) return true
 
-  const expectedHost = getExpectedHost()
-  if (!expectedHost) return true
+  const allowedHosts = getAllowedHosts()
+  if (allowedHosts.size === 0) return true
 
   try {
     const originHost = new URL(originHeader).host
-    return originHost === expectedHost
+    return allowedHosts.has(originHost)
   } catch {
     return false
   }
@@ -42,9 +65,9 @@ async function guard(req: Request) {
   const pathname = url.pathname
 
   if (process.env.NODE_ENV === "production") {
-    const expectedHost = getExpectedHost()
+    const allowedHosts = getAllowedHosts()
     const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host")
-    if (expectedHost && host && host !== expectedHost) {
+    if (allowedHosts.size > 0 && host && !allowedHosts.has(host)) {
       return NextResponse.json({ error: "Invalid host" }, { status: 400 })
     }
   }

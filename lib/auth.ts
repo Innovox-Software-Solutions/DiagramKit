@@ -8,6 +8,43 @@ if (!process.env.AUTH_URL && process.env.NEXTAUTH_URL) {
   process.env.AUTH_URL = process.env.NEXTAUTH_URL
 }
 
+function parseUrls(value: string | undefined): string[] {
+  if (!value) return []
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function toOrigin(url: string): string | null {
+  try {
+    return new URL(url).origin
+  } catch {
+    return null
+  }
+}
+
+function getAllowedOrigins(baseUrl: string): Set<string> {
+  const allowed = new Set<string>()
+
+  const baseOrigin = toOrigin(baseUrl)
+  if (baseOrigin) allowed.add(baseOrigin)
+
+  const envUrls = [process.env.AUTH_URL, process.env.NEXTAUTH_URL]
+  for (const value of envUrls) {
+    if (!value) continue
+    const origin = toOrigin(value)
+    if (origin) allowed.add(origin)
+  }
+
+  for (const value of parseUrls(process.env.APP_URLS)) {
+    const origin = toOrigin(value)
+    if (origin) allowed.add(origin)
+  }
+
+  return allowed
+}
+
 function requiredEnv(name: string): string | undefined {
   const value = process.env[name]?.trim()
   if (value) return value
@@ -62,8 +99,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       if (url.startsWith("/")) return `${baseUrl}${url}`
       try {
         const redirectUrl = new URL(url)
-        const allowedOrigin = new URL(baseUrl).origin
-        if (redirectUrl.origin === allowedOrigin) return url
+        const allowedOrigins = getAllowedOrigins(baseUrl)
+        if (allowedOrigins.has(redirectUrl.origin)) return url
       } catch {
         // ignore
       }
