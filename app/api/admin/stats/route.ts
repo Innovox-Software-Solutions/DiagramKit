@@ -21,7 +21,7 @@ export async function GET() {
       boardsToday,
       boardsThisWeek,
       recentUsers,
-      recentBoards,
+      recentBoardsRaw,
       // Per-day user signups (last 7 days)
       dailySignupsRaw,
       // Per-day board creation (last 7 days)
@@ -57,7 +57,7 @@ export async function GET() {
           id: true,
           name: true,
           updatedAt: true,
-          user: { select: { name: true, email: true } },
+          userId: true,
         },
       }),
       // Daily signups — group by day (last 7 days)
@@ -93,6 +93,31 @@ export async function GET() {
     const dailyBoards = buildDailyMap(
       dailyBoardsRaw.map((b) => ({ date: b.createdAt }))
     );
+
+    const recentBoardUserIds = Array.from(
+      new Set(recentBoardsRaw.map((board) => board.userId)),
+    );
+    const recentBoardUsers = recentBoardUserIds.length
+      ? await prisma.user.findMany({
+          where: { id: { in: recentBoardUserIds } },
+          select: { id: true, name: true, email: true },
+        })
+      : [];
+    const recentBoardUserById = new Map(
+      recentBoardUsers.map((user) => [user.id, user]),
+    );
+    const recentBoards = recentBoardsRaw.map((board) => {
+      const user = recentBoardUserById.get(board.userId);
+      return {
+        id: board.id,
+        name: board.name,
+        updatedAt: board.updatedAt,
+        user: {
+          name: user?.name ?? null,
+          email: user?.email ?? null,
+        },
+      };
+    });
 
     // Average boards per user
     const avgBoardsPerUser = totalUsers > 0 ? +(totalBoards / totalUsers).toFixed(1) : 0;

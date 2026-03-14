@@ -6,15 +6,38 @@ export async function GET() {
     const boards = await prisma.board.findMany({
       orderBy: { updatedAt: 'desc' },
       take: 50,
-      include: {
-        user: {
-          select: { name: true, email: true }
-        }
-      }
+      select: {
+        id: true,
+        name: true,
+        shapes: true,
+        userId: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     });
 
-    return NextResponse.json(boards);
+    const userIds = Array.from(new Set(boards.map((board) => board.userId)));
+    const users = userIds.length
+      ? await prisma.user.findMany({
+          where: { id: { in: userIds } },
+          select: { id: true, name: true, email: true },
+        })
+      : [];
+
+    const userById = new Map(users.map((user) => [user.id, user]));
+    const boardsWithUsers = boards.map((board) => ({
+      ...board,
+      user: userById.get(board.userId)
+        ? {
+            name: userById.get(board.userId)?.name ?? null,
+            email: userById.get(board.userId)?.email ?? null,
+          }
+        : null,
+    }));
+
+    return NextResponse.json(boardsWithUsers);
   } catch (error) {
+    console.error("Admin boards error:", error);
     return NextResponse.json({ error: "Failed to fetch boards" }, { status: 500 });
   }
 }
