@@ -95,7 +95,11 @@ export async function GET() {
     );
 
     const recentBoardUserIds = Array.from(
-      new Set(recentBoardsRaw.map((board) => board.userId)),
+      new Set(
+        recentBoardsRaw
+          .map((board) => board.userId)
+          .filter((userId): userId is string => typeof userId === "string" && userId.length > 0),
+      ),
     );
     const recentBoardUsers = recentBoardUserIds.length
       ? await prisma.user.findMany({
@@ -107,7 +111,7 @@ export async function GET() {
       recentBoardUsers.map((user) => [user.id, user]),
     );
     const recentBoards = recentBoardsRaw.map((board) => {
-      const user = recentBoardUserById.get(board.userId);
+      const user = board.userId ? recentBoardUserById.get(board.userId) : null;
       return {
         id: board.id,
         name: board.name,

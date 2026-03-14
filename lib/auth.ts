@@ -84,15 +84,38 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       return true
     },
     async session({ session, token }) {
+      if (token.userDeleted || !token.sub) {
+        return null
+      }
+
       if (session.user && token.sub) {
         session.user.id = token.sub
       }
       return session
     },
     async jwt({ token, user }) {
-      if (user) {
-        token.sub = user.id
+      const userId =
+        (typeof user?.id === "string" && user.id) ||
+        (typeof token.sub === "string" && token.sub) ||
+        ""
+
+      if (!userId) {
+        return token
       }
+
+      const existingUser = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true },
+      })
+
+      if (!existingUser) {
+        token.userDeleted = true
+        delete token.sub
+        return token
+      }
+
+      token.sub = existingUser.id
+      delete token.userDeleted
       return token
     },
     async redirect({ url, baseUrl }) {

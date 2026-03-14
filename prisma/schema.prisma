@@ -62,12 +62,12 @@ model Board {
   name      String
   shapes    Json?
   shapesCompressed String? @db.String
-  userId    String   @db.ObjectId
+  userId    String?  @db.ObjectId
   shareId   String?
   isPublic  Boolean? @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([shareId])
