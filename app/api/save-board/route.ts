@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth"
 import prisma from "@/lib/prisma"
 import { getClientId, rateLimit } from "@/lib/rate-limit"
 
+const isMongoObjectId = (value: string) => /^[a-f\d]{24}$/i.test(value)
+
 export async function POST(req: Request) {
   try {
     const session = await auth()
@@ -49,7 +51,8 @@ export async function POST(req: Request) {
       )
     }
 
-    const body = data as { name?: unknown; shapes?: unknown }
+    const body = data as { boardId?: unknown; name?: unknown; shapes?: unknown }
+    const boardId = typeof body.boardId === "string" ? body.boardId.trim() : ""
     const name = typeof body.name === "string" ? body.name.trim() : ""
     const shapes = body.shapes
 
@@ -62,7 +65,27 @@ export async function POST(req: Request) {
 
     const safeName = name.length > 0 ? name.slice(0, 80) : "Untitled Board"
 
-    // Save board to MongoDB
+    if (boardId && isMongoObjectId(boardId)) {
+      const updated = await prisma.board.updateMany({
+        where: {
+          id: boardId,
+          userId: session.user.id as string,
+        },
+        data: {
+          name: safeName,
+          shapes,
+        },
+      })
+
+      if (updated.count > 0) {
+        return NextResponse.json(
+          { success: true, boardId },
+          { headers: { "Cache-Control": "no-store" } },
+        )
+      }
+    }
+
+    // Create board in MongoDB
     const board = await prisma.board.create({
       data: {
         name: safeName,

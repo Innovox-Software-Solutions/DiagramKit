@@ -20,9 +20,8 @@ interface BoardRecord {
     updatedAt: number;
 }
 
-const STORAGE_BOARDS_KEY = 'whiteboard.boards';
-const STORAGE_ACTIVE_BOARD_KEY = 'whiteboard.activeBoardId';
-const LEGACY_STORAGE_KEY = 'whiteboard';
+const GUEST_STORAGE_BOARDS_KEY = 'whiteboard.guest.boards';
+const GUEST_STORAGE_ACTIVE_BOARD_KEY = 'whiteboard.guest.activeBoardId';
 
 const DEFAULT_STROKE_COLOR = '#1f2937';
 const DEFAULT_FILL_COLOR = '#ffffff';
@@ -54,6 +53,51 @@ const createBoardRecord = (name: string, shapes: Shape[] = []): BoardRecord => {
     };
 };
 
+const parseGuestBoards = (): { boards: BoardRecord[]; activeBoardId: string } => {
+    try {
+        const storedBoards = localStorage.getItem(GUEST_STORAGE_BOARDS_KEY);
+        const storedActiveBoardId = localStorage.getItem(GUEST_STORAGE_ACTIVE_BOARD_KEY) ?? '';
+
+        let parsedBoards: BoardRecord[] = [];
+
+        if (storedBoards) {
+            const decoded = JSON.parse(storedBoards);
+            if (Array.isArray(decoded)) {
+                parsedBoards = decoded
+                    .map((entry): BoardRecord | null => {
+                        if (!entry || typeof entry !== 'object') return null;
+                        const now = Date.now();
+                        const name = typeof entry.name === 'string' && entry.name.trim().length > 0 ? entry.name.trim() : 'Untitled';
+                        const shapesData = Array.isArray(entry.shapes) ? entry.shapes : [];
+                        return {
+                            id: typeof entry.id === 'string' && entry.id.length > 0 ? entry.id : uuidv4(),
+                            name,
+                            shapes: shapesData,
+                            createdAt: typeof entry.createdAt === 'number' ? entry.createdAt : now,
+                            updatedAt: typeof entry.updatedAt === 'number' ? entry.updatedAt : now,
+                        };
+                    })
+                    .filter((entry): entry is BoardRecord => entry !== null);
+            }
+        }
+
+        if (parsedBoards.length === 0) {
+            const fallbackBoard = createBoardRecord('Chat 1', []);
+            return { boards: [fallbackBoard], activeBoardId: fallbackBoard.id };
+        }
+
+        const safeActiveBoardId = storedActiveBoardId && parsedBoards.some(board => board.id === storedActiveBoardId)
+            ? storedActiveBoardId
+            : parsedBoards[0].id;
+
+        return { boards: parsedBoards, activeBoardId: safeActiveBoardId };
+    } catch (error) {
+        console.error('Failed to parse guest boards from local storage', error);
+        const fallbackBoard = createBoardRecord('Chat 1', []);
+        return { boards: [fallbackBoard], activeBoardId: fallbackBoard.id };
+    }
+};
+
 const getNextBoardName = (boards: BoardRecord[]): string => {
     const usedNames = new Set(boards.map(board => board.name.trim().toLowerCase()));
     let index = 1;
@@ -62,6 +106,8 @@ const getNextBoardName = (boards: BoardRecord[]): string => {
     }
     return `Chat ${index}`;
 };
+
+const isMongoObjectId = (value: string): boolean => /^[a-f\d]{24}$/i.test(value);
 
 export const Whiteboard: React.FC = () => {
     // Auth
@@ -73,7 +119,6 @@ export const Whiteboard: React.FC = () => {
     const [activeBoardId, setActiveBoardId] = useState('');
     const [history, setHistory] = useState<Shape[][]>([[]]);
     const [historyIndex, setHistoryIndex] = useState(0);
-    const [loadedFromServer, setLoadedFromServer] = useState(false);
 
     const [currentTool, setCurrentTool] = useState<ToolType>('pointer');
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -148,6 +193,7 @@ export const Whiteboard: React.FC = () => {
     const minimapCanvasRef = useRef<HTMLCanvasElement>(null);
     const minimapTransformRef = useRef<{ scale: number; panX: number; panY: number } | null>(null);
     const isMinimapDraggingRef = useRef(false);
+    const syncBoardTimeoutRef = useRef<number | null>(null);
 
     const styleTools: ToolType[] = ['pencil', 'rectangle', 'circle', 'diamond', 'rounded-rectangle', 'arrow', 'text'];
     const selectedShapes = shapes.filter(shape => selectedShapeIds.includes(shape.id));
@@ -179,73 +225,16 @@ export const Whiteboard: React.FC = () => {
         }
     }, [status]);
 
-    // Initialize boards from local storage (with migration from legacy single-board key)
+    // Initialize from guest local storage. Existing account chats are loaded after sign-in.
     useEffect(() => {
-        try {
-            const storedBoards = localStorage.getItem(STORAGE_BOARDS_KEY);
-            const storedActiveBoardId = localStorage.getItem(STORAGE_ACTIVE_BOARD_KEY);
-            let parsedBoards: BoardRecord[] = [];
+        const guestData = parseGuestBoards();
+        const initialBoard = guestData.boards.find(board => board.id === guestData.activeBoardId) ?? guestData.boards[0];
 
-            if (storedBoards) {
-                const decoded = JSON.parse(storedBoards);
-                if (Array.isArray(decoded)) {
-                    parsedBoards = decoded
-                        .map((entry): BoardRecord | null => {
-                            if (!entry || typeof entry !== 'object') return null;
-                            const now = Date.now();
-                            const name = typeof entry.name === 'string' && entry.name.trim().length > 0 ? entry.name.trim() : 'Untitled';
-                            const shapesData = Array.isArray(entry.shapes) ? entry.shapes : [];
-                            return {
-                                id: typeof entry.id === 'string' && entry.id.length > 0 ? entry.id : uuidv4(),
-                                name,
-                                shapes: shapesData,
-                                createdAt: typeof entry.createdAt === 'number' ? entry.createdAt : now,
-                                updatedAt: typeof entry.updatedAt === 'number' ? entry.updatedAt : now,
-                            };
-                        })
-                        .filter((entry): entry is BoardRecord => entry !== null);
-                }
-            }
-
-            if (parsedBoards.length === 0) {
-                const legacyBoard = localStorage.getItem(LEGACY_STORAGE_KEY);
-                if (legacyBoard) {
-                    try {
-                        const legacyShapes = JSON.parse(legacyBoard);
-                        if (Array.isArray(legacyShapes)) {
-                            parsedBoards = [createBoardRecord('Chat 1', legacyShapes)];
-                        }
-                    } catch (error) {
-                        console.error('Failed to migrate legacy board', error);
-                    }
-                }
-            }
-
-            if (parsedBoards.length === 0) {
-                parsedBoards = [createBoardRecord('Chat 1', [])];
-            }
-
-            const defaultActiveBoardId = storedActiveBoardId && parsedBoards.some(board => board.id === storedActiveBoardId)
-                ? storedActiveBoardId
-                : parsedBoards[0].id;
-            const initialBoard = parsedBoards.find(board => board.id === defaultActiveBoardId) ?? parsedBoards[0];
-
-            // eslint-disable-next-line react-hooks/set-state-in-effect
-            setBoards(parsedBoards);
-            setActiveBoardId(initialBoard.id);
-            setShapes(initialBoard.shapes);
-            setHistory([initialBoard.shapes]);
-            setHistoryIndex(0);
-            localStorage.removeItem(LEGACY_STORAGE_KEY);
-        } catch (error) {
-            console.error('Failed to initialize boards from local storage', error);
-            const fallbackBoard = createBoardRecord('Chat 1', []);
-            setBoards([fallbackBoard]);
-            setActiveBoardId(fallbackBoard.id);
-            setShapes([]);
-            setHistory([[]]);
-            setHistoryIndex(0);
-        }
+        setBoards(guestData.boards);
+        setActiveBoardId(initialBoard.id);
+        setShapes(initialBoard.shapes);
+        setHistory([initialBoard.shapes]);
+        setHistoryIndex(0);
     }, []);
 
     // Load boards from server when user signs in
@@ -270,7 +259,13 @@ export const Whiteboard: React.FC = () => {
                             setShapes(initialBoard.shapes);
                             setHistory([initialBoard.shapes]);
                             setHistoryIndex(0);
-                            setLoadedFromServer(true);
+                        } else {
+                            const fallbackBoard = createBoardRecord('Chat 1', []);
+                            setBoards([fallbackBoard]);
+                            setActiveBoardId(fallbackBoard.id);
+                            setShapes([]);
+                            setHistory([[]]);
+                            setHistoryIndex(0);
                         }
                     }
                 })
@@ -278,78 +273,19 @@ export const Whiteboard: React.FC = () => {
         }
     }, [session?.user?.id]);
 
-    // Reload from local storage when signing out
+    // Restore guest local storage data when signing out.
     useEffect(() => {
-        if (!session?.user?.id && loadedFromServer) {
-            // Reload from local storage
-            try {
-                const storedBoards = localStorage.getItem(STORAGE_BOARDS_KEY);
-                const storedActiveBoardId = localStorage.getItem(STORAGE_ACTIVE_BOARD_KEY);
-                let parsedBoards: BoardRecord[] = [];
+        if (!session?.user?.id && status === 'unauthenticated') {
+            const guestData = parseGuestBoards();
+            const initialBoard = guestData.boards.find(board => board.id === guestData.activeBoardId) ?? guestData.boards[0];
 
-                if (storedBoards) {
-                    const decoded = JSON.parse(storedBoards);
-                    if (Array.isArray(decoded)) {
-                        parsedBoards = decoded
-                            .map((entry): BoardRecord | null => {
-                                if (!entry || typeof entry !== 'object') return null;
-                                const now = Date.now();
-                                const name = typeof entry.name === 'string' && entry.name.trim().length > 0 ? entry.name.trim() : 'Untitled';
-                                const shapesData = Array.isArray(entry.shapes) ? entry.shapes : [];
-                                return {
-                                    id: typeof entry.id === 'string' && entry.id.length > 0 ? entry.id : uuidv4(),
-                                    name,
-                                    shapes: shapesData,
-                                    createdAt: typeof entry.createdAt === 'number' ? entry.createdAt : now,
-                                    updatedAt: typeof entry.updatedAt === 'number' ? entry.updatedAt : now,
-                                };
-                            })
-                            .filter((entry): entry is BoardRecord => entry !== null);
-                    }
-                }
-
-                if (parsedBoards.length === 0) {
-                    const legacyBoard = localStorage.getItem(LEGACY_STORAGE_KEY);
-                    if (legacyBoard) {
-                        try {
-                            const legacyShapes = JSON.parse(legacyBoard);
-                            if (Array.isArray(legacyShapes)) {
-                                parsedBoards = [createBoardRecord('Chat 1', legacyShapes)];
-                            }
-                        } catch (error) {
-                            console.error('Failed to migrate legacy board', error);
-                        }
-                    }
-                }
-
-                if (parsedBoards.length === 0) {
-                    parsedBoards = [createBoardRecord('Chat 1', [])];
-                }
-
-                const defaultActiveBoardId = storedActiveBoardId && parsedBoards.some(board => board.id === storedActiveBoardId)
-                    ? storedActiveBoardId
-                    : parsedBoards[0].id;
-                const initialBoard = parsedBoards.find(board => board.id === defaultActiveBoardId) ?? parsedBoards[0];
-
-                setBoards(parsedBoards);
-                setActiveBoardId(initialBoard.id);
-                setShapes(initialBoard.shapes);
-                setHistory([initialBoard.shapes]);
-                setHistoryIndex(0);
-                setLoadedFromServer(false);
-                localStorage.removeItem(LEGACY_STORAGE_KEY);
-            } catch (error) {
-                console.error('Failed to reload boards from local storage', error);
-                const fallbackBoard = createBoardRecord('Chat 1', []);
-                setBoards([fallbackBoard]);
-                setActiveBoardId(fallbackBoard.id);
-                setShapes([]);
-                setHistory([[]]);
-                setHistoryIndex(0);
-                setLoadedFromServer(false);
-            }
+            setBoards(guestData.boards);
+            setActiveBoardId(initialBoard.id);
+            setShapes(initialBoard.shapes);
+            setHistory([initialBoard.shapes]);
+            setHistoryIndex(0);
         }
-    }, [session?.user?.id, loadedFromServer]);
+    }, [session?.user?.id, status]);
 
     // Keep active board shapes synced when drawing changes
     useEffect(() => {
@@ -372,12 +308,67 @@ export const Whiteboard: React.FC = () => {
         });
     }, [shapes, activeBoardId]);
 
-    // Persist board collection + active board to local storage
+    // Auto-save the active board for authenticated users so existing chats reappear on next login.
     useEffect(() => {
-        if (!activeBoardId || boards.length === 0) return;
-        localStorage.setItem(STORAGE_BOARDS_KEY, JSON.stringify(boards));
-        localStorage.setItem(STORAGE_ACTIVE_BOARD_KEY, activeBoardId);
-    }, [boards, activeBoardId]);
+        if (!session?.user?.id || !activeBoardId) return;
+
+        const activeBoard = boards.find(board => board.id === activeBoardId);
+        if (!activeBoard) return;
+
+        if (syncBoardTimeoutRef.current) {
+            window.clearTimeout(syncBoardTimeoutRef.current);
+        }
+
+        syncBoardTimeoutRef.current = window.setTimeout(async () => {
+            try {
+                const res = await fetch('/api/save-board', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        boardId: isMongoObjectId(activeBoard.id) ? activeBoard.id : undefined,
+                        name: activeBoard.name,
+                        shapes: activeBoard.shapes,
+                    }),
+                });
+
+                if (!res.ok) return;
+
+                const responseData = await res.json();
+                const serverBoardId = typeof responseData?.boardId === 'string' ? responseData.boardId : '';
+                if (!serverBoardId || serverBoardId === activeBoard.id) return;
+
+                setBoards(prevBoards => prevBoards.map(board => (
+                    board.id === activeBoard.id
+                        ? { ...board, id: serverBoardId }
+                        : board
+                )));
+                setActiveBoardId(prevActiveBoardId => (
+                    prevActiveBoardId === activeBoard.id ? serverBoardId : prevActiveBoardId
+                ));
+            } catch (error) {
+                console.error('Failed to sync board to server', error);
+            }
+        }, 700);
+
+        return () => {
+            if (syncBoardTimeoutRef.current) {
+                window.clearTimeout(syncBoardTimeoutRef.current);
+                syncBoardTimeoutRef.current = null;
+            }
+        };
+    }, [boards, activeBoardId, session?.user?.id]);
+
+    // Persist guest boards to local storage when not signed in.
+    useEffect(() => {
+        if (session?.user?.id || !activeBoardId || boards.length === 0) return;
+
+        try {
+            localStorage.setItem(GUEST_STORAGE_BOARDS_KEY, JSON.stringify(boards));
+            localStorage.setItem(GUEST_STORAGE_ACTIVE_BOARD_KEY, activeBoardId);
+        } catch (error) {
+            console.error('Failed to persist guest boards to local storage', error);
+        }
+    }, [boards, activeBoardId, session?.user?.id]);
 
     useEffect(() => {
         const imageShapes = shapes.filter(
