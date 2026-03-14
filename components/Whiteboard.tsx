@@ -194,6 +194,8 @@ export const Whiteboard: React.FC = () => {
     const minimapTransformRef = useRef<{ scale: number; panX: number; panY: number } | null>(null);
     const isMinimapDraggingRef = useRef(false);
     const syncBoardTimeoutRef = useRef<number | null>(null);
+    const serverBoardIdByLocalIdRef = useRef<Map<string, string>>(new Map());
+    const savingBoardIdsRef = useRef<Set<string>>(new Set());
 
     const styleTools: ToolType[] = ['pencil', 'rectangle', 'circle', 'diamond', 'rounded-rectangle', 'arrow', 'text'];
     const selectedShapes = shapes.filter(shape => selectedShapeIds.includes(shape.id));
@@ -316,17 +318,24 @@ export const Whiteboard: React.FC = () => {
         if (!activeBoard) return;
         if (!activeBoard.shapes || activeBoard.shapes.length === 0) return;
 
+        const resolvedBoardId = isMongoObjectId(activeBoard.id)
+            ? activeBoard.id
+            : (serverBoardIdByLocalIdRef.current.get(activeBoard.id) ?? '');
+
+        if (savingBoardIdsRef.current.has(activeBoard.id)) return;
+
         if (syncBoardTimeoutRef.current) {
             window.clearTimeout(syncBoardTimeoutRef.current);
         }
 
         syncBoardTimeoutRef.current = window.setTimeout(async () => {
             try {
+                savingBoardIdsRef.current.add(activeBoard.id);
                 const res = await fetch('/api/save-board', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        boardId: isMongoObjectId(activeBoard.id) ? activeBoard.id : undefined,
+                        boardId: resolvedBoardId || undefined,
                         name: activeBoard.name,
                         shapes: activeBoard.shapes,
                     }),
@@ -336,7 +345,13 @@ export const Whiteboard: React.FC = () => {
 
                 const responseData = await res.json();
                 const serverBoardId = typeof responseData?.boardId === 'string' ? responseData.boardId : '';
-                if (!serverBoardId || serverBoardId === activeBoard.id) return;
+                if (!serverBoardId) return;
+
+                if (!isMongoObjectId(activeBoard.id)) {
+                    serverBoardIdByLocalIdRef.current.set(activeBoard.id, serverBoardId);
+                }
+
+                if (serverBoardId === activeBoard.id) return;
 
                 setBoards(prevBoards => prevBoards.map(board => (
                     board.id === activeBoard.id
@@ -348,6 +363,8 @@ export const Whiteboard: React.FC = () => {
                 ));
             } catch (error) {
                 console.error('Failed to sync board to server', error);
+            } finally {
+                savingBoardIdsRef.current.delete(activeBoard.id);
             }
         }, 700);
 
