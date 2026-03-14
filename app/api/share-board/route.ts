@@ -3,6 +3,7 @@ import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import prisma from "@/lib/prisma"
 import { getClientId, rateLimit } from "@/lib/rate-limit"
+import { encodeShapes } from "@/lib/board-serialization"
 
 const isMongoObjectId = (value: string) => /^[a-f\d]{24}$/i.test(value)
 
@@ -69,6 +70,7 @@ export async function POST(req: Request) {
     }
 
     const safeName = name.length > 0 ? name.slice(0, 80) : "Untitled Board"
+    const shapesCompressed = encodeShapes(shapes)
 
     let board: { id: string; shareId: string | null } | null = null
 
@@ -88,7 +90,8 @@ export async function POST(req: Request) {
           where: { id: existing.id },
           data: {
             name: safeName,
-            shapes,
+            shapes: [],
+            shapesCompressed,
             isPublic: true,
             shareId: nextShareId,
           },
@@ -103,7 +106,8 @@ export async function POST(req: Request) {
       board = await prisma.board.create({
         data: {
           name: safeName,
-          shapes,
+          shapes: [],
+          shapesCompressed,
           userId: session.user.id as string,
           shareId: generatedShareId,
           isPublic: true,

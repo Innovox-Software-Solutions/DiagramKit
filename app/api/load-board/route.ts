@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import prisma from "@/lib/prisma"
 import { getClientId, rateLimit } from "@/lib/rate-limit"
+import { safeDecodeShapes } from "@/lib/board-serialization"
 
 export async function GET(req: Request) {
   try {
@@ -43,7 +44,14 @@ export async function GET(req: Request) {
       take,
     })
 
-    return NextResponse.json(boards, { headers: { "Cache-Control": "no-store" } })
+    const normalized = boards.map((board) => ({
+      ...board,
+      shapes: board.shapesCompressed
+        ? (safeDecodeShapes(board.shapesCompressed) as unknown[])
+        : (Array.isArray(board.shapes) ? board.shapes : []),
+    }))
+
+    return NextResponse.json(normalized, { headers: { "Cache-Control": "no-store" } })
   } catch (error) {
     console.error("Failed to load board", error)
     return NextResponse.json(

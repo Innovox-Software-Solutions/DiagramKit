@@ -60,7 +60,8 @@ model VerificationToken {
 model Board {
   id        String   @id @default(auto()) @map("_id") @db.ObjectId
   name      String
-  shapes    Json
+  shapes    Json?
+  shapesCompressed String? @db.String
   userId    String   @db.ObjectId
   shareId   String?
   isPublic  Boolean? @default(false)

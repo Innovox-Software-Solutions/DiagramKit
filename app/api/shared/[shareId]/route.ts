@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import prisma from "@/lib/prisma"
 import { getClientId, rateLimit } from "@/lib/rate-limit"
+import { safeDecodeShapes } from "@/lib/board-serialization"
 
 type Params = {
   params: Promise<{ shareId: string }>
@@ -43,6 +44,7 @@ export async function GET(req: Request, { params }: Params) {
         id: true,
         name: true,
         shapes: true,
+        shapesCompressed: true,
         updatedAt: true,
       },
     })
@@ -54,11 +56,24 @@ export async function GET(req: Request, { params }: Params) {
       )
     }
 
-    return NextResponse.json(board, {
+    const boardRecord = board as unknown as { shapes: unknown; shapesCompressed?: string | null }
+    const shapes = boardRecord.shapesCompressed
+      ? (safeDecodeShapes(boardRecord.shapesCompressed) as unknown[])
+      : (Array.isArray(boardRecord.shapes) ? boardRecord.shapes : [])
+
+    return NextResponse.json(
+      {
+        id: board.id,
+        name: board.name,
+        shapes,
+        updatedAt: board.updatedAt,
+      },
+      {
       headers: {
         "Cache-Control": "public, max-age=60, s-maxage=120",
       },
-    })
+      },
+    )
   } catch (error) {
     console.error("Failed to load shared board", error)
     return NextResponse.json(

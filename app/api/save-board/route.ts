@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import prisma from "@/lib/prisma"
 import { getClientId, rateLimit } from "@/lib/rate-limit"
+import { encodeShapes } from "@/lib/board-serialization"
 
 const isMongoObjectId = (value: string) => /^[a-f\d]{24}$/i.test(value)
 
@@ -71,6 +72,7 @@ export async function POST(req: Request) {
     }
 
     const safeName = name.length > 0 ? name.slice(0, 80) : "Untitled Board"
+    const shapesCompressed = encodeShapes(shapes)
 
     if (boardId && isMongoObjectId(boardId)) {
       const updated = await prisma.board.updateMany({
@@ -80,7 +82,8 @@ export async function POST(req: Request) {
         },
         data: {
           name: safeName,
-          shapes,
+          shapes: [],
+          shapesCompressed,
         },
       })
 
@@ -96,7 +99,8 @@ export async function POST(req: Request) {
     const board = await prisma.board.create({
       data: {
         name: safeName,
-        shapes,
+        shapes: [],
+        shapesCompressed,
         userId: session.user.id as string,
       },
     })
