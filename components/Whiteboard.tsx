@@ -2221,6 +2221,7 @@ export const Whiteboard: React.FC = () => {
         if (!renamingBoardId) return;
         const trimmedName = renameInputValue.trim();
         if (!trimmedName) return;
+        const boardToRename = boards.find(board => board.id === renamingBoardId);
         setBoards(prevBoards => prevBoards.map(board => {
             if (board.id !== renamingBoardId) return board;
             return {
@@ -2229,6 +2230,42 @@ export const Whiteboard: React.FC = () => {
                 updatedAt: Date.now(),
             };
         }));
+        if (session?.user?.id && boardToRename?.shapes && boardToRename.shapes.length > 0) {
+            const resolvedBoardId = isMongoObjectId(boardToRename.id)
+                ? boardToRename.id
+                : (serverBoardIdByLocalIdRef.current.get(boardToRename.id) ?? '');
+
+            fetch('/api/save-board', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    boardId: resolvedBoardId || undefined,
+                    name: trimmedName,
+                    shapes: boardToRename.shapes,
+                }),
+            })
+                .then(async (res) => {
+                    if (!res.ok) return null;
+                    const data = await res.json();
+                    const serverBoardId = typeof data?.boardId === 'string' ? data.boardId : '';
+                    if (!serverBoardId) return null;
+
+                    if (!isMongoObjectId(boardToRename.id)) {
+                        serverBoardIdByLocalIdRef.current.set(boardToRename.id, serverBoardId);
+                    }
+
+                    if (serverBoardId === boardToRename.id) return null;
+
+                    setBoards(prevBoards => prevBoards.map(board => (
+                        board.id === boardToRename.id ? { ...board, id: serverBoardId } : board
+                    )));
+                    setActiveBoardId(prevActiveBoardId => (
+                        prevActiveBoardId === boardToRename.id ? serverBoardId : prevActiveBoardId
+                    ));
+                    return null;
+                })
+                .catch(error => console.error('Failed to sync rename to server', error));
+        }
         setRenamingBoardId(null);
         setRenameInputValue('');
     };
