@@ -2219,6 +2219,14 @@ export const Whiteboard: React.FC = () => {
     const handleDeleteBoard = (boardId: string) => {
         const remainingBoards = boards.filter(board => board.id !== boardId);
 
+        if (session?.user?.id && isMongoObjectId(boardId)) {
+            fetch('/api/delete-board', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ boardId }),
+            }).catch((error) => console.error('Failed to delete board from server', error));
+        }
+
         if (remainingBoards.length === 0) {
             const freshBoard = createBoardRecord('Chat 1', []);
             setBoards([freshBoard]);
