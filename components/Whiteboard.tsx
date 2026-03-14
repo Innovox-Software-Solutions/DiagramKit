@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useSession } from 'next-auth/react';
-import { ZoomIn, ZoomOut, PanelLeftClose, PanelLeftOpen, Plus, Pencil, Check, X, Trash2 } from 'lucide-react';
+import { ZoomIn, ZoomOut, PanelLeftClose, PanelLeftOpen, Plus, Pencil, Check, X, Trash2, Copy } from 'lucide-react';
 import { Toolbar } from './Toolbar';
 import { UserMenu } from './UserMenu';
 import { AuthModal } from './AuthModal';
@@ -173,6 +173,7 @@ export const Whiteboard: React.FC = () => {
     const [exportModalVisible, setExportModalVisible] = useState(false);
     const [authModalVisible, setAuthModalVisible] = useState(false);
     const [authModalMessage, setAuthModalMessage] = useState('');
+    const [sharePopup, setSharePopup] = useState<{ url: string; copied: boolean } | null>(null);
     const pendingActionRef = useRef<(() => void) | null>(null);
     const [previewDataUrl, setPreviewDataUrl] = useState('');
     const [customStrokeColor, setCustomStrokeColor] = useState(DEFAULT_STROKE_COLOR);
@@ -2054,28 +2055,27 @@ export const Whiteboard: React.FC = () => {
                 }
             }
 
-            if (navigator.share) {
-                try {
-                    await navigator.share({
-                        title: activeBoard.name,
-                        text: 'View-only DiagramKit link',
-                        url: shareUrl,
-                    });
-                } catch {
-                    // Ignore user-cancelled share sheets.
-                }
-            }
-
-            if (copied) {
-                alert('View-only share link copied to clipboard.');
-                return;
-            }
-
-            window.prompt('Copy this view-only link:', shareUrl);
+            setSharePopup({ url: shareUrl, copied });
         } catch (error) {
             console.error('Failed to create share link', error);
             alert('Failed to create share link. Please try again.');
         }
+    };
+
+    const handleCopyShareLink = async () => {
+        if (!sharePopup?.url) return;
+
+        if (navigator.clipboard?.writeText) {
+            try {
+                await navigator.clipboard.writeText(sharePopup.url);
+                setSharePopup({ url: sharePopup.url, copied: true });
+                return;
+            } catch (error) {
+                console.error('Failed to copy share link', error);
+            }
+        }
+
+        window.prompt('Copy this view-only link:', sharePopup.url);
     };
 
     const handleLoadFile = () => {
@@ -2391,6 +2391,42 @@ export const Whiteboard: React.FC = () => {
             <div className={styles.userMenuContainer}>
                 <UserMenu />
             </div>
+
+            {sharePopup && (
+                <div className={styles.sharePopup} role="dialog" aria-label="Share link">
+                    <div className={styles.sharePopupHeader}>
+                        <div>
+                            <p className={styles.sharePopupEyebrow}>Share link</p>
+                            <h3 className={styles.sharePopupTitle}>Anyone with this link can view</h3>
+                        </div>
+                        <button
+                            type="button"
+                            className={styles.sharePopupClose}
+                            onClick={() => setSharePopup(null)}
+                            aria-label="Close share link popup"
+                        >
+                            <X size={16} />
+                        </button>
+                    </div>
+                    <div className={styles.sharePopupBody}>
+                        <input
+                            className={styles.sharePopupInput}
+                            value={sharePopup.url}
+                            readOnly
+                            onFocus={(event) => event.currentTarget.select()}
+                            aria-label="Share link"
+                        />
+                        <button
+                            type="button"
+                            className={styles.sharePopupCopyButton}
+                            onClick={handleCopyShareLink}
+                        >
+                            {sharePopup.copied ? <Check size={16} /> : <Copy size={16} />}
+                            {sharePopup.copied ? 'Copied' : 'Copy link'}
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {isSidebarOpen && (
                 <button
