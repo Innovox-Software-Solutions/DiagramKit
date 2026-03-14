@@ -58,3 +58,32 @@
   width: 24px;
   height: 24px;
 }
+
+.guestLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin-top: 14px;
+  padding: 12px 20px;
+  border-radius: 12px;
+  border: 1px solid rgba(99, 102, 241, 0.22);
+  background: rgba(99, 102, 241, 0.08);
+  color: #4338ca;
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.guestLink:hover {
+  background: rgba(99, 102, 241, 0.14);
+  transform: translateY(-1px);
+}
+
+.note {
+  margin: 18px 0 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #6b7280;
+}

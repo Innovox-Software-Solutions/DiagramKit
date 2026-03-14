@@ -243,6 +243,13 @@ export const Whiteboard: React.FC = () => {
     // Load boards from server when user signs in
     useEffect(() => {
         if (session?.user?.id) {
+            try {
+                localStorage.removeItem(GUEST_STORAGE_BOARDS_KEY);
+                localStorage.removeItem(GUEST_STORAGE_ACTIVE_BOARD_KEY);
+            } catch (error) {
+                console.error('Failed to clear guest boards from local storage', error);
+            }
+
             fetch('/api/load-board')
                 .then(res => res.json())
                 .then(data => {
@@ -1906,13 +1913,6 @@ export const Whiteboard: React.FC = () => {
     };
 
     const handleExportPNG = (opts: ExportOptions) => {
-        if (!session) {
-            pendingActionRef.current = () => handleExportPNG(opts);
-            setAuthModalMessage('Sign in to export and download your drawings as images.');
-            setAuthModalVisible(true);
-            return;
-        }
-        
         const c = getExportCanvas(opts.backgroundColor);
         if (!c) return;
         const dataUrl = c.toDataURL('image/png');
@@ -1923,13 +1923,6 @@ export const Whiteboard: React.FC = () => {
     };
 
     const handleExportJPG = (opts: ExportOptions) => {
-        if (!session) {
-            pendingActionRef.current = () => handleExportJPG(opts);
-            setAuthModalMessage('Sign in to export and download your drawings as images.');
-            setAuthModalVisible(true);
-            return;
-        }
-        
         const bgColor = opts.backgroundColor === 'transparent' ? '#ffffff' : opts.backgroundColor;
         const c = getExportCanvas(bgColor);
         if (!c) return;

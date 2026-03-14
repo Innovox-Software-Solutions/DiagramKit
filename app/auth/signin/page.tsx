@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { signIn } from "next-auth/react";
 import styles from "./signin.module.css";
 
@@ -21,6 +22,12 @@ export default function SignIn() {
           </svg>
           Continue with Google
         </button>
+        <Link href="/" className={styles.guestLink}>
+          Maybe Later
+        </Link>
+        <p className={styles.note}>
+          Continue as guest to draw and download locally. Share by link is available after sign in.
+        </p>
       </div>
     </div>
   );
