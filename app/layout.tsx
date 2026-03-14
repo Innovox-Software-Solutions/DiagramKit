@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono, Lobster_Two } from "next/font/google";
+import { Geist, Geist_Mono, Lobster_Two, Inter, Roboto, Open_Sans } from "next/font/google";
 import SessionProvider from "@/components/SessionProvider";
 import "./globals.css";
 
@@ -17,6 +17,22 @@ const lobsterTwo = Lobster_Two({
   weight: ["400", "700"],
   subsets: ["latin"],
   variable: "--font-lobster-two",
+});
+
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
+});
+
+const roboto = Roboto({
+  weight: ["400", "700"],
+  subsets: ["latin"],
+  variable: "--font-roboto",
+});
+
+const openSans = Open_Sans({
+  subsets: ["latin"],
+  variable: "--font-open-sans",
 });
 
 export const metadata: Metadata = {
@@ -44,7 +60,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} ${lobsterTwo.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${lobsterTwo.variable} ${inter.variable} ${roboto.variable} ${openSans.variable} antialiased`}
       >
         <SessionProvider>{children}</SessionProvider>
       </body>

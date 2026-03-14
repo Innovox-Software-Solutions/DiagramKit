@@ -37,7 +37,7 @@ export const UserMenu: React.FC = () => {
                         <div className={styles.userName}>{session.user?.name}</div>
                         <div className={styles.userEmail}>{session.user?.email}</div>
                     </div>
-                    <button className={styles.signOutButton} onClick={() => signOut()}>
+                    <button className={styles.signOutButton} onClick={() => signOut({ callbackUrl: '/' })}>
                         <LogOut size={16} />
                         Sign Out
                     </button>

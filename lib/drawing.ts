@@ -13,16 +13,23 @@ const getMeasureCtx = () => {
 };
 
 const getResolvedFont = (family?: string): string => {
-    // If family is explicitly something else, try to use it? 
-    // The user said "dont use simple for all text use this".
-    // I'll make Lobster Two the default if family is missing or 'Lobster Two'.
-    if ((!family || family === 'Lobster Two' || family === 'sans-serif') && typeof document !== 'undefined') {
-        const style = getComputedStyle(document.body).getPropertyValue('--font-lobster-two');
+    if (typeof document === 'undefined') return family || 'Lobster Two, cursive';
+
+    const fontMap: Record<string, string> = {
+        'Lobster Two': '--font-lobster-two',
+        'Inter': '--font-inter',
+        'Roboto': '--font-roboto',
+        'Open Sans': '--font-open-sans',
+        'Geist Sans': '--font-geist-sans',
+        'Geist Mono': '--font-geist-mono',
+    };
+
+    const cssVar = fontMap[family || 'Lobster Two'];
+    if (cssVar) {
+        const style = getComputedStyle(document.body).getPropertyValue(cssVar);
         if (style) return style.trim().replace(/"/g, "'");
     }
-    // Even if it's some other string, we might want to override? 
-    // But let's respect explicit choices if there were multiple fonts. 
-    // Assuming 'simple' refers to default sans-serif.
+
     return family || 'Lobster Two, cursive';
 };
 

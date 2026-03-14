@@ -65,7 +65,7 @@ const getNextBoardName = (boards: BoardRecord[]): string => {
 
 export const Whiteboard: React.FC = () => {
     // Auth
-    const { data: session } = useSession();
+    const { data: session, status } = useSession();
     
     // State
     const [shapes, setShapes] = useState<Shape[]>([]);
@@ -73,6 +73,7 @@ export const Whiteboard: React.FC = () => {
     const [activeBoardId, setActiveBoardId] = useState('');
     const [history, setHistory] = useState<Shape[][]>([[]]);
     const [historyIndex, setHistoryIndex] = useState(0);
+    const [loadedFromServer, setLoadedFromServer] = useState(false);
 
     const [currentTool, setCurrentTool] = useState<ToolType>('pointer');
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -170,6 +171,14 @@ export const Whiteboard: React.FC = () => {
         };
     }, []);
 
+    // Show auth modal on load if not authenticated
+    useEffect(() => {
+        if (status === 'unauthenticated') {
+            setAuthModalMessage('Welcome! Sign in with Google to save and sync your diagrams across devices.');
+            setAuthModalVisible(true);
+        }
+    }, [status]);
+
     // Initialize boards from local storage (with migration from legacy single-board key)
     useEffect(() => {
         try {
@@ -238,6 +247,109 @@ export const Whiteboard: React.FC = () => {
             setHistoryIndex(0);
         }
     }, []);
+
+    // Load boards from server when user signs in
+    useEffect(() => {
+        if (session?.user?.id) {
+            fetch('/api/load-board')
+                .then(res => res.json())
+                .then(data => {
+                    if (data && Array.isArray(data)) {
+                        const serverBoards: BoardRecord[] = data.map(board => ({
+                            id: board.id,
+                            name: board.name,
+                            shapes: board.shapes || [],
+                            createdAt: new Date(board.createdAt).getTime(),
+                            updatedAt: new Date(board.updatedAt).getTime(),
+                        }));
+                        if (serverBoards.length > 0) {
+                            const defaultActiveBoardId = serverBoards[0].id;
+                            const initialBoard = serverBoards.find(board => board.id === defaultActiveBoardId) ?? serverBoards[0];
+                            setBoards(serverBoards);
+                            setActiveBoardId(initialBoard.id);
+                            setShapes(initialBoard.shapes);
+                            setHistory([initialBoard.shapes]);
+                            setHistoryIndex(0);
+                            setLoadedFromServer(true);
+                        }
+                    }
+                })
+                .catch(error => console.error('Failed to load boards from server', error));
+        }
+    }, [session?.user?.id]);
+
+    // Reload from local storage when signing out
+    useEffect(() => {
+        if (!session?.user?.id && loadedFromServer) {
+            // Reload from local storage
+            try {
+                const storedBoards = localStorage.getItem(STORAGE_BOARDS_KEY);
+                const storedActiveBoardId = localStorage.getItem(STORAGE_ACTIVE_BOARD_KEY);
+                let parsedBoards: BoardRecord[] = [];
+
+                if (storedBoards) {
+                    const decoded = JSON.parse(storedBoards);
+                    if (Array.isArray(decoded)) {
+                        parsedBoards = decoded
+                            .map((entry): BoardRecord | null => {
+                                if (!entry || typeof entry !== 'object') return null;
+                                const now = Date.now();
+                                const name = typeof entry.name === 'string' && entry.name.trim().length > 0 ? entry.name.trim() : 'Untitled';
+                                const shapesData = Array.isArray(entry.shapes) ? entry.shapes : [];
+                                return {
+                                    id: typeof entry.id === 'string' && entry.id.length > 0 ? entry.id : uuidv4(),
+                                    name,
+                                    shapes: shapesData,
+                                    createdAt: typeof entry.createdAt === 'number' ? entry.createdAt : now,
+                                    updatedAt: typeof entry.updatedAt === 'number' ? entry.updatedAt : now,
+                                };
+                            })
+                            .filter((entry): entry is BoardRecord => entry !== null);
+                    }
+                }
+
+                if (parsedBoards.length === 0) {
+                    const legacyBoard = localStorage.getItem(LEGACY_STORAGE_KEY);
+                    if (legacyBoard) {
+                        try {
+                            const legacyShapes = JSON.parse(legacyBoard);
+                            if (Array.isArray(legacyShapes)) {
+                                parsedBoards = [createBoardRecord('Chat 1', legacyShapes)];
+                            }
+                        } catch (error) {
+                            console.error('Failed to migrate legacy board', error);
+                        }
+                    }
+                }
+
+                if (parsedBoards.length === 0) {
+                    parsedBoards = [createBoardRecord('Chat 1', [])];
+                }
+
+                const defaultActiveBoardId = storedActiveBoardId && parsedBoards.some(board => board.id === storedActiveBoardId)
+                    ? storedActiveBoardId
+                    : parsedBoards[0].id;
+                const initialBoard = parsedBoards.find(board => board.id === defaultActiveBoardId) ?? parsedBoards[0];
+
+                setBoards(parsedBoards);
+                setActiveBoardId(initialBoard.id);
+                setShapes(initialBoard.shapes);
+                setHistory([initialBoard.shapes]);
+                setHistoryIndex(0);
+                setLoadedFromServer(false);
+                localStorage.removeItem(LEGACY_STORAGE_KEY);
+            } catch (error) {
+                console.error('Failed to reload boards from local storage', error);
+                const fallbackBoard = createBoardRecord('Chat 1', []);
+                setBoards([fallbackBoard]);
+                setActiveBoardId(fallbackBoard.id);
+                setShapes([]);
+                setHistory([[]]);
+                setHistoryIndex(0);
+                setLoadedFromServer(false);
+            }
+        }
+    }, [session?.user?.id, loadedFromServer]);
 
     // Keep active board shapes synced when drawing changes
     useEffect(() => {
@@ -1355,8 +1467,7 @@ export const Whiteboard: React.FC = () => {
                 x: hitTextShape.x, 
                 y: hitTextShape.y, 
                 fontSize: hitTextShape.fontSize || 20,
-                // Force Lobster Two for editing as requested
-                fontFamily: 'Lobster Two',
+                fontFamily: hitTextShape.fontFamily || 'Lobster Two',
                 fontWeight: hitTextShape.fontWeight || '400',
                 fontStyle: hitTextShape.fontStyle || 'normal',
                 textDecoration: hitTextShape.textDecoration || 'none',
@@ -2429,7 +2540,17 @@ export const Whiteboard: React.FC = () => {
                             color: editingText.strokeColor || '#000000',
                             fontSize: `${editingText.fontSize}px`,
                             lineHeight: 1.25,
-                            fontFamily: 'var(--font-lobster-two)',
+                            fontFamily: (() => {
+                                const fontMap: Record<string, string> = {
+                                    'Lobster Two': 'var(--font-lobster-two)',
+                                    'Inter': 'var(--font-inter)',
+                                    'Roboto': 'var(--font-roboto)',
+                                    'Open Sans': 'var(--font-open-sans)',
+                                    'Geist Sans': 'var(--font-geist-sans)',
+                                    'Geist Mono': 'var(--font-geist-mono)',
+                                };
+                                return fontMap[editingText.fontFamily || 'Lobster Two'] || 'var(--font-lobster-two)';
+                            })(),
                             fontWeight: editingText.fontWeight || 'normal',
                             fontStyle: editingText.fontStyle || 'normal',
                             textDecoration: editingText.textDecoration || 'none',
@@ -2485,6 +2606,19 @@ export const Whiteboard: React.FC = () => {
                                 onClick={() => setEditingText({ ...editingText, textDecoration: editingText.textDecoration === 'underline' ? 'none' : 'underline' })}>
                                U
                            </button>
+                           <div style={{ width: 1, height: 20, background: '#444', margin: '0 4px' }} />
+                           <select
+                               value={editingText.fontFamily}
+                               onChange={(e) => setEditingText({ ...editingText, fontFamily: e.target.value })}
+                               style={{ padding: '4px', borderRadius: 4, background: '#333', color: '#fff', border: 'none', cursor: 'pointer', fontSize: '12px' }}
+                           >
+                               <option value="Lobster Two">Lobster Two</option>
+                               <option value="Inter">Inter</option>
+                               <option value="Roboto">Roboto</option>
+                               <option value="Open Sans">Open Sans</option>
+                               <option value="Geist Sans">Geist Sans</option>
+                               <option value="Geist Mono">Geist Mono</option>
+                           </select>
                            <div style={{ width: 1, height: 20, background: '#444', margin: '0 4px' }} />
                            <input type="color" value={editingText.strokeColor || '#000000'} 
                                 onChange={(e) => setEditingText({ ...editingText, strokeColor: e.target.value })}
