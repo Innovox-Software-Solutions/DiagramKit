@@ -615,19 +615,20 @@
 
 @media (max-width: 768px) {
     .container {
+        --mobile-sidebar-top: max(52px, calc(env(safe-area-inset-top) + 44px));
         --toolbar-left-reserve: 10px;
         --toolbar-right-reserve: 10px;
     }
 
     .sidebar {
-        top: 0;
+        top: var(--mobile-sidebar-top);
         bottom: 0;
         left: 0;
         right: auto;
         width: min(78vw, 340px);
         max-width: calc(100dvw - 10px);
-        height: 100dvh;
-        max-height: 100dvh;
+        height: calc(100dvh - var(--mobile-sidebar-top));
+        max-height: calc(100dvh - var(--mobile-sidebar-top));
         border-radius: 0 16px 16px 0;
     }
 
