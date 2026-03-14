@@ -1939,13 +1939,7 @@ export const Whiteboard: React.FC = () => {
         }
     };
 
-    const handleSaveFile = () => {
-        if (!session) {
-            setAuthModalMessage('Sign in to save and share your work with others.');
-            setAuthModalVisible(true);
-            return;
-        }
-        
+    const handleDownloadBoardFile = () => {
         try {
             const jsonString = JSON.stringify(shapes);
             const encodedData = btoa(encodeURIComponent(jsonString));
@@ -1962,13 +1956,106 @@ export const Whiteboard: React.FC = () => {
         }
     };
 
-    const handleLoadFile = () => {
-        if (!session) {
-            setAuthModalMessage('Sign in to import and load saved drawings.');
+    const handleShareLink = async () => {
+        if (!session?.user?.id) {
+            setAuthModalMessage('Sign in to create a view-only share link.');
             setAuthModalVisible(true);
             return;
         }
-        
+
+        const activeBoard = boards.find(board => board.id === activeBoardId);
+        if (!activeBoard) {
+            alert('No active board found to share.');
+            return;
+        }
+
+        try {
+            // Ensure board is persisted first so share always points to saved content.
+            const saveRes = await fetch('/api/save-board', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    boardId: isMongoObjectId(activeBoard.id) ? activeBoard.id : undefined,
+                    name: activeBoard.name,
+                    shapes: activeBoard.shapes,
+                }),
+            });
+
+            if (!saveRes.ok) {
+                alert('Failed to save board before sharing. Please try again.');
+                return;
+            }
+
+            const saveData = await saveRes.json();
+            const persistedBoardId = typeof saveData?.boardId === 'string' ? saveData.boardId : activeBoard.id;
+
+            if (persistedBoardId !== activeBoard.id) {
+                setBoards(prevBoards => prevBoards.map(board => (
+                    board.id === activeBoard.id ? { ...board, id: persistedBoardId } : board
+                )));
+                setActiveBoardId(prevActiveBoardId => (
+                    prevActiveBoardId === activeBoard.id ? persistedBoardId : prevActiveBoardId
+                ));
+            }
+
+            const shareRes = await fetch('/api/share-board', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    boardId: persistedBoardId,
+                    name: activeBoard.name,
+                    shapes: activeBoard.shapes,
+                }),
+            });
+
+            if (!shareRes.ok) {
+                alert('Failed to create share link. Please try again.');
+                return;
+            }
+
+            const shareData = await shareRes.json();
+            const shareUrl = typeof shareData?.shareUrl === 'string' ? shareData.shareUrl : '';
+
+            if (!shareUrl) {
+                alert('Invalid share link generated. Please try again.');
+                return;
+            }
+
+            let copied = false;
+            if (navigator.clipboard?.writeText) {
+                try {
+                    await navigator.clipboard.writeText(shareUrl);
+                    copied = true;
+                } catch {
+                    copied = false;
+                }
+            }
+
+            if (navigator.share) {
+                try {
+                    await navigator.share({
+                        title: activeBoard.name,
+                        text: 'View-only DiagramKit link',
+                        url: shareUrl,
+                    });
+                } catch {
+                    // Ignore user-cancelled share sheets.
+                }
+            }
+
+            if (copied) {
+                alert('View-only share link copied to clipboard.');
+                return;
+            }
+
+            window.prompt('Copy this view-only link:', shareUrl);
+        } catch (error) {
+            console.error('Failed to create share link', error);
+            alert('Failed to create share link. Please try again.');
+        }
+    };
+
+    const handleLoadFile = () => {
         const input = document.createElement('input');
         input.type = 'file';
         input.accept = '.ivxboard';
@@ -2502,7 +2589,7 @@ export const Whiteboard: React.FC = () => {
                 onIncreaseFontSize={handleIncreaseFontSize}
                 onDecreaseFontSize={handleDecreaseFontSize}
                 onOpenExport={handleOpenExport}
-                onSaveFile={handleSaveFile}
+                onShareLink={handleShareLink}
                 onLoadFile={handleLoadFile}
                 onAddImage={handleAddImage}
             />
@@ -2679,6 +2766,7 @@ export const Whiteboard: React.FC = () => {
                     onExportPNG={handleExportPNG}
                     onExportJPG={handleExportJPG}
                     onCopyClipboard={handleCopyClipboard}
+                    onDownloadBoardFile={handleDownloadBoardFile}
                 />
             )}
 

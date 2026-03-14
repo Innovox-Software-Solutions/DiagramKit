@@ -12,6 +12,7 @@ interface ExportModalProps {
     onExportPNG: (opts: ExportOptions) => void;
     onExportJPG: (opts: ExportOptions) => void;
     onCopyClipboard: (opts: ExportOptions) => void;
+    onDownloadBoardFile: () => void;
 }
 
 export const ExportModal: React.FC<ExportModalProps> = ({
@@ -20,6 +21,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     onExportPNG,
     onExportJPG,
     onCopyClipboard,
+    onDownloadBoardFile,
 }) => {
     const [bgType, setBgType] = React.useState<'transparent' | 'custom'>('transparent');
     const [customColor, setCustomColor] = React.useState('#ffffff');
@@ -79,6 +81,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 </div>
 
                 <div className={styles.actions}>
+                    <button className={styles.actionButton} onClick={onDownloadBoardFile}>
+                        <Download size={18} />
+                        Download .ivxboard
+                    </button>
                     <button className={styles.actionButton} onClick={handleExportPNG}>
                         <Download size={18} />
                         Export PNG

@@ -1,5 +1,5 @@
 import React from 'react';
-import { MousePointer2, Hand, Pencil, Square, Circle, Diamond, ArrowRight, Type, ImagePlus, Trash2, Undo2, Redo2, Plus, Minus, Download, Share2, Upload } from 'lucide-react';
+import { MousePointer2, Hand, Pencil, Square, Circle, Diamond, ArrowRight, Type, ImagePlus, Trash2, Undo2, Redo2, Plus, Minus, Share2, Upload, Download } from 'lucide-react';
 import { ToolType } from '@/types/shape';
 import styles from './Toolbar.module.css';
 
@@ -14,7 +14,7 @@ interface ToolbarProps {
     onIncreaseFontSize?: () => void;
     onDecreaseFontSize?: () => void;
     onOpenExport?: () => void;
-    onSaveFile?: () => void;
+    onShareLink?: () => void;
     onLoadFile?: () => void;
     onAddImage?: () => void;
 }
@@ -30,7 +30,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
     onIncreaseFontSize,
     onDecreaseFontSize,
     onOpenExport,
-    onSaveFile,
+    onShareLink,
     onLoadFile,
     onAddImage,
 }) => {
@@ -172,11 +172,11 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                 <button className={styles.iconButton} onClick={onLoadFile} title="Open File">
                     <Upload size={18} />
                 </button>
-                <button className={styles.iconButton} onClick={onSaveFile} title="Share to File">
+                <button className={styles.iconButton} onClick={onShareLink} title="Share link (view only)">
                     <Share2 size={18} />
                 </button>
                 <div className={styles.divider} style={{ margin: '0 4px', height: '24px' }} />
-                <button className={styles.iconButton} onClick={onOpenExport} title="Export Image">
+                <button className={styles.iconButton} onClick={onOpenExport} title="Export">
                     <Download size={18} />
                 </button>
             </div>
