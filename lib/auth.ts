@@ -85,7 +85,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     },
     async session({ session, token }) {
       if (token.userDeleted || !token.sub) {
-        return null
+        return {
+          ...session,
+          user: undefined,
+        }
       }
 
       if (session.user && token.sub) {
