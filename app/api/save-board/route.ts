@@ -63,6 +63,13 @@ export async function POST(req: Request) {
       )
     }
 
+    if (Array.isArray(shapes) && shapes.length === 0) {
+      return NextResponse.json(
+        { success: true, skipped: "empty" },
+        { headers: { "Cache-Control": "no-store" } },
+      )
+    }
+
     const safeName = name.length > 0 ? name.slice(0, 80) : "Untitled Board"
 
     if (boardId && isMongoObjectId(boardId)) {

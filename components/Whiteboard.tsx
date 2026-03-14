@@ -314,6 +314,7 @@ export const Whiteboard: React.FC = () => {
 
         const activeBoard = boards.find(board => board.id === activeBoardId);
         if (!activeBoard) return;
+        if (!activeBoard.shapes || activeBoard.shapes.length === 0) return;
 
         if (syncBoardTimeoutRef.current) {
             window.clearTimeout(syncBoardTimeoutRef.current);
@@ -1966,6 +1967,11 @@ export const Whiteboard: React.FC = () => {
         const activeBoard = boards.find(board => board.id === activeBoardId);
         if (!activeBoard) {
             alert('No active board found to share.');
+            return;
+        }
+
+        if (!activeBoard.shapes || activeBoard.shapes.length === 0) {
+            alert('Add some content before sharing.');
             return;
         }
 
