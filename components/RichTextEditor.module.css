@@ -1,0 +1,12 @@
+.editor {
+  outline: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.editor:empty:before {
+  content: attr(data-placeholder);
+  color: rgba(226, 232, 240, 0.55);
+  pointer-events: none;
+}
+

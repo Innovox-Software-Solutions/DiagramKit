@@ -3,6 +3,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useSession } from 'next-auth/react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { ZoomIn, ZoomOut, PanelLeftClose, PanelLeftOpen, Plus, Pencil, Check, X, Trash2, Copy } from 'lucide-react';
 import { Toolbar } from './Toolbar';
 import { UserMenu } from './UserMenu';
@@ -18,6 +20,12 @@ interface BoardRecord {
     shapes: Shape[];
     createdAt: number;
     updatedAt: number;
+}
+
+interface WhiteboardProps {
+    showTopbar?: boolean;
+    workspaceLeftOffset?: number;
+    topbarHeight?: number;
 }
 
 const GUEST_STORAGE_BOARDS_KEY = 'whiteboard.guest.boards';
@@ -109,9 +117,14 @@ const getNextBoardName = (boards: BoardRecord[]): string => {
 
 const isMongoObjectId = (value: string): boolean => /^[a-f\d]{24}$/i.test(value);
 
-export const Whiteboard: React.FC = () => {
+export const Whiteboard: React.FC<WhiteboardProps> = ({
+    showTopbar = true,
+    workspaceLeftOffset = 0,
+    topbarHeight = 56,
+}) => {
     // Auth
     const { data: session, status } = useSession();
+    const pathname = usePathname();
     
     // State
     const [shapes, setShapes] = useState<Shape[]>([]);
@@ -124,6 +137,8 @@ export const Whiteboard: React.FC = () => {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [renamingBoardId, setRenamingBoardId] = useState<string | null>(null);
     const [renameInputValue, setRenameInputValue] = useState('');
+    const [isTitleEditing, setIsTitleEditing] = useState(false);
+    const [titleDraft, setTitleDraft] = useState('');
 
     const [selectedShapeIds, setSelectedShapeIds] = useState<string[]>([]);
     const [selectionBox, setSelectionBox] = useState<{ startX: number, startY: number, endX: number, endY: number } | null>(null);
@@ -2166,63 +2181,21 @@ export const Whiteboard: React.FC = () => {
 
     const sortedBoards = [...boards].sort((a, b) => b.updatedAt - a.updatedAt);
 
-    const handleCreateNewBoard = () => {
-        const newBoard = createBoardRecord(getNextBoardName(boards), []);
-        setBoards(prevBoards => [newBoard, ...prevBoards]);
-        setActiveBoardId(newBoard.id);
-        setShapes([]);
-        setHistory([[]]);
-        setHistoryIndex(0);
-        setSelectedShapeIds([]);
-        setSelectionBox(null);
-        setHoveredAnchor(null);
-        setEditingText(null);
-        setCurrentTool('pointer');
-        setPanOffset({ x: 0, y: 0 });
-        setScale(1);
-        setRenamingBoardId(null);
-        setRenameInputValue('');
-    };
-
-    const handleSwitchBoard = (boardId: string) => {
-        const board = boards.find(item => item.id === boardId);
-        if (!board) return;
-        setActiveBoardId(board.id);
-        setShapes(board.shapes);
-        setHistory([board.shapes]);
-        setHistoryIndex(0);
-        setSelectedShapeIds([]);
-        setSelectionBox(null);
-        setHoveredAnchor(null);
-        setEditingText(null);
-        setCurrentTool('pointer');
-        setRenamingBoardId(null);
-        setRenameInputValue('');
-    };
-
-    const handleRenameStart = (board: BoardRecord) => {
-        setRenamingBoardId(board.id);
-        setRenameInputValue(board.name);
-    };
-
-    const handleRenameCancel = () => {
-        setRenamingBoardId(null);
-        setRenameInputValue('');
-    };
-
-    const handleRenameCommit = () => {
-        if (!renamingBoardId) return;
-        const trimmedName = renameInputValue.trim();
+    const renameBoardById = (boardId: string, nextNameRaw: string) => {
+        const trimmedName = nextNameRaw.trim();
         if (!trimmedName) return;
-        const boardToRename = boards.find(board => board.id === renamingBoardId);
+
+        const boardToRename = boards.find(board => board.id === boardId);
+
         setBoards(prevBoards => prevBoards.map(board => {
-            if (board.id !== renamingBoardId) return board;
+            if (board.id !== boardId) return board;
             return {
                 ...board,
                 name: trimmedName,
                 updatedAt: Date.now(),
             };
         }));
+
         if (session?.user?.id && boardToRename?.shapes && boardToRename.shapes.length > 0) {
             const resolvedBoardId = isMongoObjectId(boardToRename.id)
                 ? boardToRename.id
@@ -2259,6 +2232,59 @@ export const Whiteboard: React.FC = () => {
                 })
                 .catch(error => console.error('Failed to sync rename to server', error));
         }
+    };
+
+    const handleCreateNewBoard = () => {
+        const newBoard = createBoardRecord(getNextBoardName(boards), []);
+        setBoards(prevBoards => [newBoard, ...prevBoards]);
+        setActiveBoardId(newBoard.id);
+        setShapes([]);
+        setHistory([[]]);
+        setHistoryIndex(0);
+        setSelectedShapeIds([]);
+        setSelectionBox(null);
+        setHoveredAnchor(null);
+        setEditingText(null);
+        setCurrentTool('pointer');
+        setPanOffset({ x: 0, y: 0 });
+        setScale(1);
+        setRenamingBoardId(null);
+        setRenameInputValue('');
+        setIsTitleEditing(false);
+        setTitleDraft('');
+    };
+
+    const handleSwitchBoard = (boardId: string) => {
+        const board = boards.find(item => item.id === boardId);
+        if (!board) return;
+        setActiveBoardId(board.id);
+        setShapes(board.shapes);
+        setHistory([board.shapes]);
+        setHistoryIndex(0);
+        setSelectedShapeIds([]);
+        setSelectionBox(null);
+        setHoveredAnchor(null);
+        setEditingText(null);
+        setCurrentTool('pointer');
+        setRenamingBoardId(null);
+        setRenameInputValue('');
+        setIsTitleEditing(false);
+        setTitleDraft('');
+    };
+
+    const handleRenameStart = (board: BoardRecord) => {
+        setRenamingBoardId(board.id);
+        setRenameInputValue(board.name);
+    };
+
+    const handleRenameCancel = () => {
+        setRenamingBoardId(null);
+        setRenameInputValue('');
+    };
+
+    const handleRenameCommit = () => {
+        if (!renamingBoardId) return;
+        renameBoardById(renamingBoardId, renameInputValue);
         setRenamingBoardId(null);
         setRenameInputValue('');
     };
@@ -2371,8 +2397,76 @@ export const Whiteboard: React.FC = () => {
         shouldShowStyleSidebar ? styles.withStyleSidebar : '',
     ].filter(Boolean).join(' ');
 
+    const containerStyle = {
+        ['--workspace-left-offset' as never]: `${workspaceLeftOffset}px`,
+        ['--app-topbar-height' as never]: `${topbarHeight}px`,
+    } as React.CSSProperties;
+
+    const activeBoardName = boards.find(board => board.id === activeBoardId)?.name ?? 'Untitled';
+    const isCanvasActive = pathname === '/canvas' || pathname === '/' || (pathname?.startsWith('/c/') ?? false);
+    const isDocumentsActive = pathname?.startsWith('/documents') ?? false;
+    const isBothActive = pathname === '/both';
+
+    const beginTitleEdit = () => {
+        setTitleDraft(activeBoardName);
+        setIsTitleEditing(true);
+    };
+
+    const commitTitleEdit = () => {
+        if (!activeBoardId) return;
+        renameBoardById(activeBoardId, titleDraft);
+        setIsTitleEditing(false);
+        setTitleDraft('');
+    };
+
     return (
-        <div className={containerClassName}>
+        <div className={containerClassName} style={containerStyle}>
+            {showTopbar && (
+                <header className={styles.topbar}>
+                    <div className={styles.topbarLeft}>
+                        {isTitleEditing ? (
+                            <input
+                                className={styles.topbarTitleInput}
+                                value={titleDraft}
+                                onChange={(event) => setTitleDraft(event.target.value)}
+                                onKeyDown={(event) => {
+                                    if (event.key === 'Enter') {
+                                        event.preventDefault();
+                                        commitTitleEdit();
+                                    } else if (event.key === 'Escape') {
+                                        event.preventDefault();
+                                        setIsTitleEditing(false);
+                                        setTitleDraft('');
+                                    }
+                                }}
+                                onBlur={commitTitleEdit}
+                                autoFocus
+                                aria-label="File name"
+                            />
+                        ) : (
+                            <button className={styles.topbarTitleButton} onClick={beginTitleEdit} title="Rename file">
+                                {activeBoardName}
+                            </button>
+                        )}
+                    </div>
+
+                    <nav className={styles.modeTabs} aria-label="Workspace mode">
+                        <Link href="/documents" className={`${styles.modeTab} ${isDocumentsActive ? styles.modeTabActive : ''}`}>
+                            Document
+                        </Link>
+                        <Link href="/both" className={`${styles.modeTab} ${isBothActive ? styles.modeTabActive : ''}`}>
+                            Both
+                        </Link>
+                        <Link href="/canvas" className={`${styles.modeTab} ${isCanvasActive ? styles.modeTabActive : ''}`}>
+                            Canvas
+                        </Link>
+                    </nav>
+
+                    <div className={styles.topbarRight}>
+                        <UserMenu />
+                    </div>
+                </header>
+            )}
             <button
                 className={styles.sidebarToggle}
                 onClick={() => setIsSidebarOpen(prev => !prev)}
@@ -2380,10 +2474,6 @@ export const Whiteboard: React.FC = () => {
             >
                 {isSidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
             </button>
-
-            <div className={styles.userMenuContainer}>
-                <UserMenu />
-            </div>
 
             {sharePopup && (
                 <div className={styles.sharePopup} role="dialog" aria-label="Share link">
@@ -2432,6 +2522,14 @@ export const Whiteboard: React.FC = () => {
 
             {isSidebarOpen && (
                 <aside className={styles.sidebar}>
+                    <div className={styles.sidebarAppNav}>
+                        <Link href="/canvas" className={`${styles.sidebarAppLink} ${styles.sidebarAppLinkActive}`}>
+                            Canvas
+                        </Link>
+                        <Link href="/documents" className={styles.sidebarAppLink}>
+                            Documents
+                        </Link>
+                    </div>
                     <div className={styles.sidebarHeader}>
                         <h3 className={styles.sidebarTitle}>Boards</h3>
                         <button className={styles.newBoardButton} onClick={handleCreateNewBoard}>

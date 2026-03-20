@@ -1,9 +1,11 @@
 .container {
     --ui-gap: clamp(10px, 1.4vw, 16px);
-    --floating-top: max(92px, calc(env(safe-area-inset-top) + 84px));
+    --app-topbar-height: 56px;
+    --workspace-left-offset: 0px;
+    --floating-top: calc(var(--app-topbar-height) + max(92px, calc(env(safe-area-inset-top) + 84px)));
     --boards-sidebar-width: clamp(280px, 26vw, 320px);
     --style-sidebar-width: clamp(272px, 24vw, 304px);
-    --toolbar-left-reserve: calc(var(--ui-gap) + 52px);
+    --toolbar-left-reserve: calc(var(--workspace-left-offset) + var(--ui-gap) + 52px);
     --toolbar-right-reserve: var(--ui-gap);
     --bottom-toolbar-offset: max(8px, env(safe-area-inset-bottom));
     --bottom-toolbar-height: 64px;
@@ -16,10 +18,11 @@
     /* Light grey background like Excalidraw */
     display: flex;
     flex-direction: column;
+    padding-left: var(--workspace-left-offset);
 }
 
 .withBoardsSidebar {
-    --toolbar-left-reserve: calc(var(--ui-gap) + var(--boards-sidebar-width) + 14px);
+    --toolbar-left-reserve: calc(var(--workspace-left-offset) + var(--ui-gap) + var(--boards-sidebar-width) + 14px);
 }
 
 .withStyleSidebar {
@@ -166,8 +169,8 @@
 
 .sidebarToggle {
     position: fixed;
-    top: max(16px, calc(env(safe-area-inset-top) + 8px));
-    left: var(--ui-gap);
+    top: calc(var(--app-topbar-height) + max(16px, calc(env(safe-area-inset-top) + 8px)));
+    left: calc(var(--workspace-left-offset) + var(--ui-gap));
     z-index: 130;
     width: 40px;
     height: 40px;
@@ -188,14 +191,14 @@
 
 .userMenuContainer {
     position: fixed;
-    top: max(16px, calc(env(safe-area-inset-top) + 8px));
+    top: calc(var(--app-topbar-height) + max(16px, calc(env(safe-area-inset-top) + 8px)));
     right: 16px;
     z-index: 130;
 }
 
 .sharePopup {
     position: fixed;
-    top: max(68px, calc(env(safe-area-inset-top) + 60px));
+    top: calc(var(--app-topbar-height) + max(68px, calc(env(safe-area-inset-top) + 60px)));
     right: var(--ui-gap);
     z-index: 220;
     width: min(420px, calc(100vw - (var(--ui-gap) * 2)));
@@ -300,7 +303,7 @@
 .sidebar {
     position: fixed;
     top: var(--floating-top);
-    left: var(--ui-gap);
+    left: calc(var(--workspace-left-offset) + var(--ui-gap));
     z-index: 120;
     width: var(--boards-sidebar-width);
     max-width: calc(100vw - (var(--ui-gap) * 2));
@@ -314,6 +317,37 @@
     overflow: hidden;
 }
 
+.sidebarAppNav {
+    display: flex;
+    gap: 8px;
+    padding: 12px;
+    border-bottom: 1px solid #e5e7eb;
+    background: #ffffff;
+}
+
+.sidebarAppLink {
+    flex: 1;
+    text-decoration: none;
+    border: 1px solid #d1d5db;
+    border-radius: 10px;
+    padding: 8px 10px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #111827;
+    background: #ffffff;
+    text-align: center;
+}
+
+.sidebarAppLink:hover {
+    background: #f9fafb;
+}
+
+.sidebarAppLinkActive {
+    background: #eff6ff;
+    border-color: #bfdbfe;
+    color: #1d4ed8;
+}
+
 .sidebarHeader {
     display: flex;
     align-items: center;
@@ -322,6 +356,107 @@
     padding: 12px;
     border-bottom: 1px solid #e5e7eb;
     gap: 8px;
+}
+
+.topbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: var(--app-topbar-height);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 0 16px;
+    background: #0b1220;
+    color: #e5e7eb;
+    z-index: 125;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+    --menu-button-bg: rgba(2, 6, 23, 0.35);
+    --menu-button-border: rgba(148, 163, 184, 0.22);
+    --menu-button-fg: #e5e7eb;
+    --menu-button-bg-hover: rgba(148, 163, 184, 0.12);
+    --menu-button-border-hover: rgba(148, 163, 184, 0.32);
+    --menu-dropdown-bg: rgba(2, 6, 23, 0.92);
+    --menu-dropdown-border: rgba(148, 163, 184, 0.22);
+    --menu-dropdown-fg: #e5e7eb;
+    --menu-dropdown-muted: rgba(226, 232, 240, 0.75);
+}
+
+.topbarLeft {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    flex: 1;
+}
+
+.topbarTitleButton {
+    border: none;
+    background: transparent;
+    color: #f9fafb;
+    font-size: 14px;
+    font-weight: 800;
+    padding: 6px 8px;
+    border-radius: 10px;
+    cursor: pointer;
+    max-width: 44vw;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.topbarTitleButton:hover {
+    background: rgba(148, 163, 184, 0.12);
+}
+
+.topbarTitleInput {
+    width: min(520px, 44vw);
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    background: rgba(2, 6, 23, 0.4);
+    color: #f9fafb;
+    border-radius: 10px;
+    padding: 7px 10px;
+    font-size: 13px;
+    font-weight: 800;
+    outline: none;
+}
+
+.modeTabs {
+    display: inline-flex;
+    gap: 2px;
+    padding: 4px;
+    border-radius: 12px;
+    background: rgba(148, 163, 184, 0.10);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.modeTab {
+    text-decoration: none;
+    color: #e5e7eb;
+    font-size: 12px;
+    font-weight: 800;
+    padding: 7px 12px;
+    border-radius: 10px;
+    line-height: 1;
+}
+
+.modeTab:hover {
+    background: rgba(148, 163, 184, 0.12);
+}
+
+.modeTabActive {
+    background: rgba(59, 130, 246, 0.22);
+    color: #ffffff;
+}
+
+.topbarRight {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    flex: 1;
 }
 
 .sidebarTitle {

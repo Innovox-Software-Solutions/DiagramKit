@@ -216,7 +216,7 @@ export default function SharedBoardPage() {
           </div>
         </div>
         <Link
-          href="/"
+          href="/canvas"
           style={{
             display: "inline-flex",
             alignItems: "center",

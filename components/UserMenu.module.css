@@ -7,19 +7,19 @@
     align-items: center;
     gap: 8px;
     padding: 8px 16px;
-    background: #ffffff;
-    border: 1px solid #e5e7eb;
+    background: var(--menu-button-bg, #ffffff);
+    border: 1px solid var(--menu-button-border, #e5e7eb);
     border-radius: 8px;
     font-size: 14px;
     font-weight: 600;
-    color: #1f2937;
+    color: var(--menu-button-fg, #1f2937);
     cursor: pointer;
     transition: all 0.2s ease;
 }
 
 .signInButton:hover {
-    background: #f9fafb;
-    border-color: #d1d5db;
+    background: var(--menu-button-bg-hover, #f9fafb);
+    border-color: var(--menu-button-border-hover, #d1d5db);
 }
 
 .userButton {
@@ -28,8 +28,8 @@
     justify-content: center;
     width: 40px;
     height: 40px;
-    background: #ffffff;
-    border: 1px solid #e5e7eb;
+    background: var(--menu-button-bg, #ffffff);
+    border: 1px solid var(--menu-button-border, #e5e7eb);
     border-radius: 50%;
     cursor: pointer;
     transition: all 0.2s ease;
@@ -52,8 +52,8 @@
     position: absolute;
     top: calc(100% + 8px);
     right: 0;
-    background: #ffffff;
-    border: 1px solid #e5e7eb;
+    background: var(--menu-dropdown-bg, #ffffff);
+    border: 1px solid var(--menu-dropdown-border, #e5e7eb);
     border-radius: 12px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
     padding: 12px;
@@ -63,20 +63,20 @@
 
 .userInfo {
     padding: 8px;
-    border-bottom: 1px solid #e5e7eb;
+    border-bottom: 1px solid var(--menu-dropdown-border, #e5e7eb);
     margin-bottom: 8px;
 }
 
 .userName {
     font-size: 14px;
     font-weight: 600;
-    color: #1f2937;
+    color: var(--menu-dropdown-fg, #1f2937);
     margin-bottom: 4px;
 }
 
 .userEmail {
     font-size: 12px;
-    color: #6b7280;
+    color: var(--menu-dropdown-muted, #6b7280);
 }
 
 .signOutButton {

@@ -1,0 +1,66 @@
+.root {
+  color: #0f172a;
+  font-family: var(--font-inter), var(--font-geist-sans), system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+}
+
+.empty {
+  color: rgba(15, 23, 42, 0.55);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.h1 {
+  margin: 0 0 12px;
+  font-size: 24px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+}
+
+.h2 {
+  margin: 18px 0 10px;
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+}
+
+.h3 {
+  margin: 16px 0 8px;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.p {
+  margin: 0 0 10px;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.ul,
+.ol {
+  margin: 8px 0 12px 18px;
+  padding: 0;
+}
+
+.li {
+  margin: 6px 0;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.inlineCode {
+  font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  background: rgba(15, 23, 42, 0.06);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 0.95em;
+}
+
+.strong {
+  font-weight: 900;
+}
+
+.em {
+  font-style: italic;
+}
+

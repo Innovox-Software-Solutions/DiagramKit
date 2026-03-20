@@ -11,7 +11,7 @@ export default function SignIn() {
         <h1 className={styles.title}>Sign in to DiagramKit</h1>
         <p className={styles.subtitle}>Sign in to save and share your drawings</p>
         <button 
-          onClick={() => signIn("google", { callbackUrl: "/" })}
+          onClick={() => signIn("google", { callbackUrl: "/canvas" })}
           className={styles.googleButton}
         >
           <svg className={styles.googleIcon} viewBox="0 0 24 24">
@@ -22,7 +22,7 @@ export default function SignIn() {
           </svg>
           Continue with Google
         </button>
-        <Link href="/" className={styles.guestLink}>
+        <Link href="/canvas" className={styles.guestLink}>
           Maybe Later
         </Link>
         <p className={styles.note}>
