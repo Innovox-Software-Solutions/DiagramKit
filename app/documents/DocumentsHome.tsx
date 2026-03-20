@@ -68,7 +68,7 @@ export default function DocumentsHome() {
   const [documents, setDocuments] = React.useState<DocumentRecord[]>([]);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
-  const [guestMode, setGuestMode] = useState(false);
+  const [guestMode, setGuestMode] = useState(true);
 
   React.useEffect(() => {
     const stored = localStorage.getItem(DOCS_THEME_KEY)
@@ -85,8 +85,16 @@ export default function DocumentsHome() {
   }, [theme])
 
   React.useEffect(() => {
-    setGuestMode(localStorage.getItem(DOCS_GUEST_MODE_KEY) === "1")
-  }, [])
+    if (status === "authenticated") {
+      setGuestMode(false)
+      localStorage.removeItem(DOCS_GUEST_MODE_KEY)
+      return
+    }
+    if (status === "unauthenticated") {
+      setGuestMode(true)
+      localStorage.setItem(DOCS_GUEST_MODE_KEY, "1")
+    }
+  }, [status])
 
   React.useEffect(() => {
     let cancelled = false
@@ -204,9 +212,7 @@ export default function DocumentsHome() {
             <div className={styles.subheading}>
               {session?.user?.id
                 ? "Your chat notes are securely stored to your signed-in account."
-                : guestMode
-                  ? "Guest mode: chat notes are saved only on this browser."
-                  : "Sign in with Google or continue in guest mode."}
+                : "Guest mode: chat notes are saved only on this browser."}
             </div>
           </div>
         </div>
@@ -227,17 +233,6 @@ export default function DocumentsHome() {
           <button className={`${styles.headerActionButton} ${styles.hideOnMobile}`} onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}>
             {theme === "dark" ? "Light Mode" : "Dark Mode"}
           </button>
-          {!session?.user?.id && (
-            <button
-              className={styles.headerActionButton}
-              onClick={() => {
-                localStorage.setItem(DOCS_GUEST_MODE_KEY, "1")
-                setGuestMode(true)
-              }}
-            >
-              Maybe Later
-            </button>
-          )}
           <button className={styles.primaryButton} onClick={handleCreate}>
             New Document
           </button>
@@ -249,23 +244,6 @@ export default function DocumentsHome() {
         {status === "loading" || !hasLoaded ? (
           <div className={styles.emptyState}>
             <div className={styles.emptyTitle}>Loading…</div>
-          </div>
-        ) : !session?.user?.id && !guestMode ? (
-          <div className={styles.emptyState}>
-            <div className={styles.emptyTitle}>Sign in required</div>
-            <div className={styles.emptyDesc}>Sign in for cloud save/share, or continue in guest mode with local save.</div>
-            <button className={styles.primaryButton} onClick={() => signIn("google", { callbackUrl: "/documents" })}>
-              Sign in with Google
-            </button>
-            <button
-              className={styles.secondaryButton}
-              onClick={() => {
-                localStorage.setItem(DOCS_GUEST_MODE_KEY, "1")
-                setGuestMode(true)
-              }}
-            >
-              Maybe Later (Guest Mode)
-            </button>
           </div>
         ) : sortedDocuments.length === 0 ? (
           <div className={styles.emptyState}>

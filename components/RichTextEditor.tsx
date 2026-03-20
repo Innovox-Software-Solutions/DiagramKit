@@ -18,7 +18,8 @@ export type RichTextCommand =
   | { type: 'textColor'; value: string }
   | { type: 'highlightColor'; value: string }
   | { type: 'fontFamily'; value: string }
-  | { type: 'table'; rows?: number; cols?: number; header?: boolean };
+  | { type: 'table'; rows?: number; cols?: number; header?: boolean }
+  | { type: 'insertHtml'; html: string };
 
 const runCommand = (command: RichTextCommand) => {
   if (typeof document === 'undefined') return;
@@ -116,7 +117,63 @@ const runCommand = (command: RichTextCommand) => {
         );
       }
       break;
+    case 'insertHtml':
+      document.execCommand('insertHTML', false, command.html);
+      break;
   }
+};
+
+const parseDelimitedText = (input: string, delimiter: ',' | '\t') => {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < input.length; i += 1) {
+    const ch = input[i];
+    const next = input[i + 1];
+
+    if (ch === '"') {
+      if (inQuotes && next === '"') {
+        cell += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (!inQuotes && ch === delimiter) {
+      row.push(cell);
+      cell = '';
+      continue;
+    }
+
+    if (!inQuotes && (ch === '\n' || ch === '\r')) {
+      if (ch === '\r' && next === '\n') i += 1;
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = '';
+      continue;
+    }
+
+    cell += ch;
+  }
+
+  row.push(cell);
+  rows.push(row);
+  return rows.filter((r) => !(r.length === 1 && r[0] === ''));
+};
+
+const focusCell = (cell: HTMLTableCellElement) => {
+  const selection = window.getSelection();
+  if (!selection) return;
+  const range = document.createRange();
+  range.selectNodeContents(cell);
+  range.collapse(false);
+  selection.removeAllRanges();
+  selection.addRange(range);
 };
 
 const normalizeHtml = (html: string): string => {
@@ -197,6 +254,24 @@ export default function RichTextEditor({
   }, [onReady]);
 
   useEffect(() => {
+    const handleSelectionChange = () => {
+      const root = ref.current;
+      if (!root) return;
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) return;
+      const anchorNode = selection.anchorNode;
+      if (anchorNode && root.contains(anchorNode)) {
+        selectionRangeRef.current = selection.getRangeAt(0).cloneRange();
+      }
+    };
+
+    document.addEventListener('selectionchange', handleSelectionChange);
+    return () => {
+      document.removeEventListener('selectionchange', handleSelectionChange);
+    };
+  }, []);
+
+  useEffect(() => {
     try {
       document.execCommand('defaultParagraphSeparator', false, 'div');
     } catch {
@@ -225,8 +300,58 @@ export default function RichTextEditor({
   };
 
   const handlePaste: React.ClipboardEventHandler<HTMLDivElement> = (event) => {
-    event.preventDefault();
+    const root = ref.current;
+    if (!root) return;
+
+    const selection = window.getSelection();
+    const anchorEl =
+      selection?.anchorNode?.nodeType === Node.ELEMENT_NODE
+        ? (selection.anchorNode as HTMLElement)
+        : (selection?.anchorNode?.parentElement ?? null);
+    const activeCell = anchorEl?.closest('td,th') as HTMLTableCellElement | null;
+
     const text = event.clipboardData.getData('text/plain');
+    const hasGridData = text.includes('\t') || text.includes(',') || text.includes('\n');
+    if (activeCell && hasGridData) {
+      event.preventDefault();
+      const delimiter: '\t' | ',' = text.includes('\t') ? '\t' : ',';
+      const rows = parseDelimitedText(text, delimiter);
+      const table = activeCell.closest('table');
+      const rowEl = activeCell.parentElement as HTMLTableRowElement | null;
+      if (!table || !rowEl || rows.length === 0) return;
+
+      const startRowIndex = rowEl.rowIndex;
+      const startCellIndex = activeCell.cellIndex;
+
+      for (let r = 0; r < rows.length; r += 1) {
+        const targetRowIndex = startRowIndex + r;
+        while (targetRowIndex >= table.rows.length) {
+          const tbody = table.tBodies[0] ?? table.createTBody();
+          const newRow = tbody.insertRow(-1);
+          const cols = Math.max(table.rows[0]?.cells.length ?? 1, startCellIndex + rows[r].length);
+          for (let c = 0; c < cols; c += 1) newRow.insertCell(-1).innerHTML = '&nbsp;';
+        }
+
+        const targetRow = table.rows[targetRowIndex];
+        const rowValues = rows[r];
+        for (let c = 0; c < rowValues.length; c += 1) {
+          const targetColIndex = startCellIndex + c;
+          while (targetColIndex >= targetRow.cells.length) {
+            if (targetRow.parentElement?.tagName === 'THEAD') {
+              targetRow.insertCell(-1).outerHTML = '<th></th>';
+            } else {
+              targetRow.insertCell(-1).innerHTML = '&nbsp;';
+            }
+          }
+          targetRow.cells[targetColIndex].textContent = rowValues[c] ?? '';
+        }
+      }
+
+      onChangeHtml(normalizeHtml(root.innerHTML));
+      return;
+    }
+
+    event.preventDefault();
     if (text.includes('\n')) {
       const escape = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       const html = escape(text).replace(/\n/g, '<br/>');
@@ -234,6 +359,73 @@ export default function RichTextEditor({
       return;
     }
     document.execCommand('insertText', false, text);
+  };
+
+  const handleKeyDown: React.KeyboardEventHandler<HTMLDivElement> = (event) => {
+    const root = ref.current;
+    if (!root) return;
+    const selection = window.getSelection();
+    const anchorEl =
+      selection?.anchorNode?.nodeType === Node.ELEMENT_NODE
+        ? (selection.anchorNode as HTMLElement)
+        : (selection?.anchorNode?.parentElement ?? null);
+    const activeCell = anchorEl?.closest('td,th') as HTMLTableCellElement | null;
+    if (!activeCell) return;
+
+    if (event.key === 'Tab') {
+      event.preventDefault();
+      const row = activeCell.parentElement as HTMLTableRowElement | null;
+      const table = activeCell.closest('table');
+      if (!row || !table) return;
+
+      const currentRowIndex = row.rowIndex;
+      const currentCellIndex = activeCell.cellIndex;
+      const goingBackward = event.shiftKey;
+
+      const targetCell = (() => {
+        if (goingBackward) {
+          if (currentCellIndex > 0) return row.cells[currentCellIndex - 1] as HTMLTableCellElement;
+          if (currentRowIndex > 0) {
+            const prevRow = table.rows[currentRowIndex - 1];
+            return prevRow.cells[Math.max(0, prevRow.cells.length - 1)] as HTMLTableCellElement;
+          }
+          return activeCell;
+        }
+
+        if (currentCellIndex + 1 < row.cells.length) return row.cells[currentCellIndex + 1] as HTMLTableCellElement;
+        if (currentRowIndex + 1 < table.rows.length) return table.rows[currentRowIndex + 1].cells[0] as HTMLTableCellElement;
+
+        const tbody = table.tBodies[0] ?? table.createTBody();
+        const cols = Math.max(1, row.cells.length);
+        const newRow = tbody.insertRow(-1);
+        for (let c = 0; c < cols; c += 1) newRow.insertCell(-1).innerHTML = '&nbsp;';
+        onChangeHtml(normalizeHtml(root.innerHTML));
+        return newRow.cells[0] as HTMLTableCellElement;
+      })();
+
+      focusCell(targetCell);
+      return;
+    }
+
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      const row = activeCell.parentElement as HTMLTableRowElement | null;
+      const table = activeCell.closest('table');
+      if (!row || !table) return;
+      const col = activeCell.cellIndex;
+      const nextRowIndex = row.rowIndex + 1;
+      if (nextRowIndex < table.rows.length) {
+        const nextRow = table.rows[nextRowIndex];
+        focusCell((nextRow.cells[Math.min(col, nextRow.cells.length - 1)] ?? nextRow.cells[0]) as HTMLTableCellElement);
+        return;
+      }
+      const tbody = table.tBodies[0] ?? table.createTBody();
+      const cols = Math.max(1, row.cells.length);
+      const newRow = tbody.insertRow(-1);
+      for (let c = 0; c < cols; c += 1) newRow.insertCell(-1).innerHTML = '&nbsp;';
+      onChangeHtml(normalizeHtml(root.innerHTML));
+      focusCell((newRow.cells[Math.min(col, newRow.cells.length - 1)] ?? newRow.cells[0]) as HTMLTableCellElement);
+    }
   };
 
   return (
@@ -245,6 +437,7 @@ export default function RichTextEditor({
       data-placeholder={placeholder ?? ''}
       onInput={handleInput}
       onPaste={handlePaste}
+      onKeyDown={handleKeyDown}
       onKeyUp={saveSelection}
       onMouseUp={saveSelection}
       onBlur={saveSelection}

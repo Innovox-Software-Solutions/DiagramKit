@@ -81,10 +81,53 @@ model Document {
   userId      String   @db.ObjectId
   shareId     String?
   isPublic    Boolean? @default(false)
+  shareLocked Boolean? @default(false)
+  sharePassHash String? @db.String
+  shareOneTime Boolean? @default(false)
+  shareViewCount Int? @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shareViews  DocumentShareView[]
 
   @@index([userId])
   @@index([shareId])
+}
+
+model DocumentShareView {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  documentId String   @db.ObjectId
+  shareId    String
+  viewerId   String
+  viewedAt   DateTime @default(now())
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@index([shareId])
+  @@unique([shareId, viewerId])
+}
+
+model GuestDocumentShare {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  shareId       String   @unique
+  title         String
+  contentHtml   String?  @db.String
+  shareLocked   Boolean? @default(false)
+  sharePassHash String?  @db.String
+  shareOneTime  Boolean? @default(false)
+  shareViewCount Int?    @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  views         GuestDocumentShareView[]
+}
+
+model GuestDocumentShareView {
+  id       String   @id @default(auto()) @map("_id") @db.ObjectId
+  shareId  String
+  viewerId String
+  viewedAt DateTime @default(now())
+  share    GuestDocumentShare @relation(fields: [shareId], references: [shareId], onDelete: Cascade)
+
+  @@index([shareId])
+  @@unique([shareId, viewerId])
 }

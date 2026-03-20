@@ -3,6 +3,7 @@ import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import prisma from "@/lib/prisma"
 import { getClientId, rateLimit } from "@/lib/rate-limit"
+import { hashSharePasscode } from "@/lib/share-security"
 
 const isMongoObjectId = (value: string) => /^[a-f\d]{24}$/i.test(value)
 const makeShareId = () => crypto.randomBytes(9).toString("base64url")
@@ -55,7 +56,7 @@ export async function POST(req: Request) {
       )
     }
 
-    const body = data as { docId?: unknown }
+    const body = data as { docId?: unknown; passcode?: unknown; oneTimeView?: unknown; lockEnabled?: unknown }
     const docId = typeof body.docId === "string" ? body.docId.trim() : ""
     if (!isMongoObjectId(docId)) {
       return NextResponse.json(
@@ -63,6 +64,11 @@ export async function POST(req: Request) {
         { status: 400, headers: { "Cache-Control": "no-store" } },
       )
     }
+
+    const passcode = typeof body.passcode === "string" ? body.passcode.trim() : ""
+    const lockEnabled = body.lockEnabled === true || passcode.length > 0
+    const oneTimeView = body.oneTimeView === true
+    const sharePassHash = lockEnabled && passcode ? hashSharePasscode(passcode) : null
 
     const existing = await prisma.document.findFirst({
       where: { id: docId, userId: session.user.id as string },
@@ -79,21 +85,95 @@ export async function POST(req: Request) {
     const nextShareId = makeShareId()
     const updated = await prisma.document.update({
       where: { id: existing.id },
-      data: { isPublic: true, shareId: nextShareId },
-      select: { id: true, shareId: true },
+      data: {
+        isPublic: true,
+        shareId: nextShareId,
+        shareLocked: lockEnabled,
+        sharePassHash,
+        shareOneTime: oneTimeView,
+        shareViewCount: 0,
+      },
+      select: { id: true, shareId: true, shareLocked: true, shareOneTime: true },
     })
 
     const baseUrl = getBaseUrl(req)
     const shareUrl = `${baseUrl}/d/${updated.shareId}`
 
     return NextResponse.json(
-      { success: true, docId: updated.id, shareId: updated.shareId, shareUrl },
+      {
+        success: true,
+        docId: updated.id,
+        shareId: updated.shareId,
+        shareUrl,
+        lockEnabled: !!updated.shareLocked,
+        oneTimeView: !!updated.shareOneTime,
+        views: 0,
+      },
       { headers: { "Cache-Control": "no-store" } },
     )
   } catch (error) {
     console.error("Failed to share document", error)
     return NextResponse.json(
       { error: "Failed to share document" },
+      { status: 500, headers: { "Cache-Control": "no-store" } },
+    )
+  }
+}
+
+export async function GET(req: Request) {
+  try {
+    const session = await auth()
+
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { error: "Unauthorized. Please sign in." },
+        { status: 401, headers: { "Cache-Control": "no-store" } },
+      )
+    }
+
+    const url = new URL(req.url)
+    const docId = url.searchParams.get("docId")?.trim() ?? ""
+    if (!isMongoObjectId(docId)) {
+      return NextResponse.json(
+        { error: "Invalid document id" },
+        { status: 400, headers: { "Cache-Control": "no-store" } },
+      )
+    }
+
+    const document = await prisma.document.findFirst({
+      where: { id: docId, userId: session.user.id as string },
+      select: {
+        id: true,
+        shareId: true,
+        isPublic: true,
+        shareLocked: true,
+        shareOneTime: true,
+        shareViewCount: true,
+      },
+    })
+
+    if (!document) {
+      return NextResponse.json(
+        { error: "Document not found" },
+        { status: 404, headers: { "Cache-Control": "no-store" } },
+      )
+    }
+
+    return NextResponse.json(
+      {
+        docId: document.id,
+        isShared: !!document.isPublic && !!document.shareId,
+        shareId: document.shareId,
+        lockEnabled: !!document.shareLocked,
+        oneTimeView: !!document.shareOneTime,
+        views: Number(document.shareViewCount ?? 0),
+      },
+      { headers: { "Cache-Control": "no-store" } },
+    )
+  } catch (error) {
+    console.error("Failed to load share info", error)
+    return NextResponse.json(
+      { error: "Failed to load share info" },
       { status: 500, headers: { "Cache-Control": "no-store" } },
     )
   }

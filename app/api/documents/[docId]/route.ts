@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth"
 import prisma from "@/lib/prisma"
 import { getClientId, rateLimit } from "@/lib/rate-limit"
 import { decodeDocumentHtml, encodeDocumentHtml } from "@/lib/document-serialization"
+import { deleteCached, deleteCachedByPrefix, withCached } from "@/lib/server-cache"
 
 const isMongoObjectId = (value: string) => /^[a-f\d]{24}$/i.test(value)
 const sanitizeHtml = (html: string) =>
@@ -51,9 +52,13 @@ export async function GET(req: Request, { params }: Params) {
       })
     }
 
-    const document = await prisma.document.findFirst({
-      where: { id: normalizedDocId, userId: session.user.id as string },
-      select: { id: true, title: true, contentHtml: true, updatedAt: true },
+    const userId = session.user.id as string
+    const cacheKey = `docs:item:${userId}:${normalizedDocId}`
+    const document = await withCached(cacheKey, 8_000, async () => {
+      return prisma.document.findFirst({
+        where: { id: normalizedDocId, userId },
+        select: { id: true, title: true, contentHtml: true, updatedAt: true },
+      })
     })
 
     if (!document) {
@@ -137,8 +142,9 @@ export async function PATCH(req: Request, { params }: Params) {
         : ""
     const nextContentHtmlEncoded = encodeDocumentHtml(nextContentHtml)
 
+    const userId = session.user.id as string
     const updated = await prisma.document.updateMany({
-      where: { id: normalizedDocId, userId: session.user.id as string },
+      where: { id: normalizedDocId, userId },
       data: { title: nextTitle, contentHtml: nextContentHtmlEncoded },
     })
 
@@ -148,6 +154,8 @@ export async function PATCH(req: Request, { params }: Params) {
         { status: 404, headers: { "Cache-Control": "no-store" } },
       )
     }
+    deleteCached(`docs:item:${userId}:${normalizedDocId}`)
+    deleteCachedByPrefix(`docs:list:${userId}`)
 
     return NextResponse.json(
       { success: true },
@@ -197,8 +205,9 @@ export async function DELETE(req: Request, { params }: Params) {
       })
     }
 
+    const userId = session.user.id as string
     const deleted = await prisma.document.deleteMany({
-      where: { id: normalizedDocId, userId: session.user.id as string },
+      where: { id: normalizedDocId, userId },
     })
 
     if (deleted.count === 0) {
@@ -207,6 +216,8 @@ export async function DELETE(req: Request, { params }: Params) {
         { status: 404, headers: { "Cache-Control": "no-store" } },
       )
     }
+    deleteCached(`docs:item:${userId}:${normalizedDocId}`)
+    deleteCachedByPrefix(`docs:list:${userId}`)
 
     return NextResponse.json(
       { success: true },

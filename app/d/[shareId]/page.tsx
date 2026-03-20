@@ -13,6 +13,9 @@ export default function SharedDocumentPage({ params }: { params: { shareId: stri
   const [doc, setDoc] = useState<SharedDocument | null>(null)
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading")
   const [errorMessage, setErrorMessage] = useState("")
+  const [passcode, setPasscode] = useState("")
+  const [submittedPasscode, setSubmittedPasscode] = useState("")
+  const [locked, setLocked] = useState(false)
 
   useEffect(() => {
     const stored = localStorage.getItem("diagramkit.docs.theme.v1")
@@ -33,15 +36,18 @@ export default function SharedDocumentPage({ params }: { params: { shareId: stri
 
     const run = async () => {
       try {
-        const res = await fetch(`/api/shared-document/${encodeURIComponent(params.shareId)}`, {
+        const query = submittedPasscode.trim().length ? `?passcode=${encodeURIComponent(submittedPasscode.trim())}` : ""
+        const res = await fetch(`/api/shared-document/${encodeURIComponent(params.shareId)}${query}`, {
           method: "GET",
           headers: { Accept: "application/json" },
         })
-        const data = (await res.json()) as { error?: string } & Partial<SharedDocument>
+        const data = (await res.json()) as { error?: string; locked?: boolean } & Partial<SharedDocument>
         if (!res.ok) {
+          setLocked(data.locked === true)
           throw new Error(data.error ?? "Unable to load shared document")
         }
         if (cancelled) return
+        setLocked(false)
         setDoc({
           title: String(data.title ?? "Untitled Document"),
           contentHtml: typeof data.contentHtml === "string" ? data.contentHtml : "",
@@ -59,7 +65,7 @@ export default function SharedDocumentPage({ params }: { params: { shareId: stri
     return () => {
       cancelled = true
     }
-  }, [params.shareId])
+  }, [params.shareId, submittedPasscode])
 
   return (
     <main
@@ -92,7 +98,48 @@ export default function SharedDocumentPage({ params }: { params: { shareId: stri
           </button>
         </div>
         {status === "loading" && <p>Loading shared chat...</p>}
-        {status === "error" && <p>{errorMessage}</p>}
+        {status === "error" && (
+          <div>
+            <p>{errorMessage}</p>
+            {locked && (
+              <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <input
+                  type="password"
+                  value={passcode}
+                  onChange={(event) => setPasscode(event.target.value)}
+                  placeholder="Enter passcode"
+                  style={{
+                    borderRadius: 10,
+                    border: "1px solid",
+                    borderColor: theme === "dark" ? "rgba(148, 163, 184, 0.3)" : "rgba(100, 116, 139, 0.34)",
+                    background: theme === "dark" ? "rgba(15, 23, 42, 0.62)" : "rgba(255,255,255,0.94)",
+                    color: theme === "dark" ? "#e5e7eb" : "#0f172a",
+                    padding: "8px 10px",
+                    minWidth: 220,
+                  }}
+                />
+                <button
+                  onClick={() => {
+                    setStatus("loading")
+                    setSubmittedPasscode(passcode)
+                  }}
+                  style={{
+                    borderRadius: 10,
+                    border: "1px solid",
+                    borderColor: theme === "dark" ? "rgba(148, 163, 184, 0.3)" : "rgba(100, 116, 139, 0.34)",
+                    background: theme === "dark" ? "rgba(30, 41, 59, 0.8)" : "rgba(248,250,252,0.98)",
+                    color: theme === "dark" ? "#e5e7eb" : "#0f172a",
+                    padding: "8px 12px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  Unlock
+                </button>
+              </div>
+            )}
+          </div>
+        )}
         {status === "ready" && doc && (
           <>
             <h1 style={{ fontSize: 42, fontWeight: 900, margin: 0 }}>{doc.title}</h1>

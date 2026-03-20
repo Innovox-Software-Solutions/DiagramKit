@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { signIn, useSession } from "next-auth/react";
 import { compressToUTF16, decompressFromUTF16 } from "lz-string";
 import { UserMenu } from "@/components/UserMenu";
@@ -23,6 +23,13 @@ const FONT_OPTIONS = [
 type LoadedDocument = {
   title: string
   contentHtml: string
+}
+
+type ShareInfo = {
+  isShared: boolean
+  views: number
+  lockEnabled: boolean
+  oneTimeView: boolean
 }
 
 type StoredDocument = {
@@ -108,7 +115,8 @@ export default function DocumentEditor({ docId }: { docId: string }) {
   const [highlightColor, setHighlightColor] = useState("#fef08a");
   const [fontFamily, setFontFamily] = useState(FONT_OPTIONS[0].value);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
-  const [guestMode, setGuestMode] = useState(false);
+  const [guestMode, setGuestMode] = useState(true);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [selectionUi, setSelectionUi] = useState<{ visible: boolean; x: number; y: number }>({ visible: false, x: 0, y: 0 });
   const [tableHoverUi, setTableHoverUi] = useState<{ visible: boolean; rightX: number; leftX: number; y: number }>({
     visible: false,
@@ -116,10 +124,21 @@ export default function DocumentEditor({ docId }: { docId: string }) {
     leftX: 0,
     y: 0,
   });
+  const [shareInfo, setShareInfo] = useState<ShareInfo>({ isShared: false, views: 0, lockEnabled: false, oneTimeView: false })
 
   const saveTimer = useRef<number | null>(null);
   const editorApi = useRef<null | { run: (command: RichTextCommand) => void; focus: () => void }>(null);
   const lastDocIdForAutosaveRef = useRef(docId);
+  const tableResizeDragRef = useRef<null | {
+    axis: "x" | "y"
+    startX: number
+    startY: number
+    startSize: number
+    table: HTMLTableElement
+    cellIndex: number
+    row: HTMLTableRowElement
+  }>(null);
+  const tableMoveDragRef = useRef<null | { table: HTMLTableElement }>(null);
 
   useEffect(() => {
     const stored = localStorage.getItem(DOCS_THEME_KEY)
@@ -137,8 +156,16 @@ export default function DocumentEditor({ docId }: { docId: string }) {
   }, [theme])
 
   useEffect(() => {
-    setGuestMode(localStorage.getItem(DOCS_GUEST_MODE_KEY) === "1")
-  }, [])
+    if (status === "authenticated") {
+      setGuestMode(false)
+      localStorage.removeItem(DOCS_GUEST_MODE_KEY)
+      return
+    }
+    if (status === "unauthenticated") {
+      setGuestMode(true)
+      localStorage.setItem(DOCS_GUEST_MODE_KEY, "1")
+    }
+  }, [status])
 
   const enableGuestMode = () => {
     const now = Date.now()
@@ -312,31 +339,57 @@ export default function DocumentEditor({ docId }: { docId: string }) {
   };
 
   const handleShare = async () => {
-    if (guestMode && !session?.user?.id) {
-      alert("Guest mode is local only. Sign in with Google to create a share link.")
-      return
-    }
-
-    if (!session?.user?.id) {
+    if (!session?.user?.id && !guestMode) {
       await signIn("google", { callbackUrl: `/documents/${docId}` })
       return
     }
     await persist(title, contentHtml)
 
-    const res = await fetch("/api/share-document", {
+    const lockEnabled = window.confirm("Lock this share link with passcode?")
+    const passcode = lockEnabled ? window.prompt("Set passcode for this shared link (min 4 chars)", "") ?? "" : ""
+    if (lockEnabled && passcode.trim().length < 4) {
+      alert("Passcode must be at least 4 characters.")
+      return
+    }
+    const oneTimeView = window.confirm("Allow one-time view only per browser/device?")
+
+    const endpoint = session?.user?.id ? "/api/share-document" : "/api/share-guest-document"
+    const payload = session?.user?.id
+      ? {
+          docId,
+          lockEnabled,
+          passcode: passcode.trim(),
+          oneTimeView,
+        }
+      : {
+          title,
+          contentHtml,
+          lockEnabled,
+          passcode: passcode.trim(),
+          oneTimeView,
+        }
+
+    const res = await fetch(endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
       },
-      body: JSON.stringify({ docId }),
+      body: JSON.stringify(payload),
     })
 
-    const data = (await res.json()) as { error?: string; shareUrl?: string }
+    const data = (await res.json()) as { error?: string; shareUrl?: string; views?: number; lockEnabled?: boolean; oneTimeView?: boolean }
     if (!res.ok || !data.shareUrl) {
       alert(data.error ?? "Unable to create share link")
       return
     }
+
+    setShareInfo({
+      isShared: true,
+      views: Number(data.views ?? 0),
+      lockEnabled: data.lockEnabled === true,
+      oneTimeView: data.oneTimeView === true,
+    })
 
     try {
       await navigator.clipboard.writeText(data.shareUrl)
@@ -346,7 +399,38 @@ export default function DocumentEditor({ docId }: { docId: string }) {
     }
   };
 
+  useEffect(() => {
+    if (!session?.user?.id) return
+    let cancelled = false
+    const run = async () => {
+      try {
+        const res = await fetch(`/api/share-document?docId=${encodeURIComponent(docId)}`, {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+        })
+        if (!res.ok) return
+        const data = (await res.json()) as Partial<ShareInfo>
+        if (cancelled) return
+        setShareInfo({
+          isShared: data.isShared === true,
+          views: Number(data.views ?? 0),
+          lockEnabled: data.lockEnabled === true,
+          oneTimeView: data.oneTimeView === true,
+        })
+      } catch {
+        // ignore
+      }
+    }
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [docId, session?.user?.id, saveState])
+
   const handleDownloadPdf = async () => {
+    if (isExportingPdf) return
+    setIsExportingPdf(true)
     try {
       const html2canvas = (await import("html2canvas")).default
       const { jsPDF } = await import("jspdf")
@@ -504,6 +588,8 @@ export default function DocumentEditor({ docId }: { docId: string }) {
     } catch (error) {
       console.error("Failed to export PDF", error)
       alert("Unable to download PDF right now.")
+    } finally {
+      setIsExportingPdf(false)
     }
   }
 
@@ -512,6 +598,19 @@ export default function DocumentEditor({ docId }: { docId: string }) {
   }
 
   const getEditorElement = () => document.getElementsByClassName(styles.docEditor)[0] as HTMLElement | undefined
+
+  const focusEditorAtEnd = () => {
+    const editorEl = getEditorElement()
+    if (!editorEl) return
+    editorApi.current?.focus()
+    const selection = window.getSelection()
+    if (!selection) return
+    const range = document.createRange()
+    range.selectNodeContents(editorEl)
+    range.collapse(false)
+    selection.removeAllRanges()
+    selection.addRange(range)
+  }
 
   const getSelectionContext = () => {
     const editorEl = getEditorElement()
@@ -525,11 +624,11 @@ export default function DocumentEditor({ docId }: { docId: string }) {
     return { editorEl, sel, anchorEl }
   }
 
-  const syncEditorHtml = () => {
+  const syncEditorHtml = useCallback(() => {
     const editorEl = getEditorElement()
     if (!editorEl) return
     setContentHtml(editorEl.innerHTML)
-  }
+  }, [])
 
   const getActiveCell = (): HTMLTableCellElement | null => {
     const { editorEl, anchorEl } = getSelectionContext()
@@ -705,6 +804,44 @@ export default function DocumentEditor({ docId }: { docId: string }) {
     showHoverForTable(table)
   }
 
+  const moveTableStep = (direction: "up" | "down") => {
+    const table = getTableFromHoverUi()
+    if (!table || !table.parentElement) return
+    const siblings = Array.from(table.parentElement.children).filter((el) => el !== table)
+    if (siblings.length === 0) return
+    if (direction === "up") {
+      const prev = table.previousElementSibling
+      if (!prev) return
+      table.parentElement.insertBefore(table, prev)
+    } else {
+      const next = table.nextElementSibling
+      if (!next) return
+      table.parentElement.insertBefore(next, table)
+    }
+    syncEditorHtml()
+    showHoverForTable(table)
+  }
+
+  const adjustTableWidthFromHover = (deltaPercent: number) => {
+    const table = getTableFromHoverUi()
+    if (!table) return
+    const current = Number((table.style.width || "100%").replace("%", "")) || 100
+    const next = Math.max(35, Math.min(100, current + deltaPercent))
+    table.style.width = `${next}%`
+    table.style.maxWidth = "100%"
+    table.style.tableLayout = "fixed"
+    syncEditorHtml()
+    showHoverForTable(table)
+  }
+
+  const startMoveTableDrag: React.MouseEventHandler<HTMLButtonElement> = (event) => {
+    event.preventDefault()
+    const table = getTableFromHoverUi()
+    if (!table) return
+    tableMoveDragRef.current = { table }
+    table.classList.add(styles.tableDragging)
+  }
+
   useEffect(() => {
     const updateSelectionUi = () => {
       const editorEl = getEditorElement()
@@ -745,27 +882,144 @@ export default function DocumentEditor({ docId }: { docId: string }) {
       const editorEl = getEditorElement()
       if (!editorEl) return
       const target = event.target as HTMLElement | null
+      const isOverPanel = !!target?.closest(`.${styles.tableHoverPanel}`)
+      if (isOverPanel) return
       const table = target?.closest("table")
       if (table && editorEl.contains(table)) {
+        if (!tableResizeDragRef.current) {
+          const cell = target?.closest("td,th") as HTMLTableCellElement | null
+          if (cell) {
+            const rect = cell.getBoundingClientRect()
+            const edge = 6
+            const nearRight = Math.abs(event.clientX - rect.right) <= edge
+            const nearBottom = Math.abs(event.clientY - rect.bottom) <= edge
+            if (nearRight && nearBottom) {
+              editorEl.style.cursor = "nwse-resize"
+            } else if (nearRight) {
+              editorEl.style.cursor = "col-resize"
+            } else if (nearBottom) {
+              editorEl.style.cursor = "row-resize"
+            } else {
+              editorEl.style.cursor = "text"
+            }
+          } else {
+            editorEl.style.cursor = "text"
+          }
+        }
         showHoverForTable(table as HTMLTableElement)
         return
       }
+      editorEl.style.cursor = "text"
       setTableHoverUi((prev) => (prev.visible ? { ...prev, visible: false } : prev))
+    }
+
+    const handleMouseDown = (event: MouseEvent) => {
+      const editorEl = getEditorElement()
+      if (!editorEl) return
+      const target = event.target as HTMLElement | null
+      const cell = target?.closest("td,th") as HTMLTableCellElement | null
+      if (!cell || !editorEl.contains(cell)) return
+      const table = cell.closest("table") as HTMLTableElement | null
+      const row = cell.parentElement as HTMLTableRowElement | null
+      if (!table || !row) return
+
+      const rect = cell.getBoundingClientRect()
+      const edge = 6
+      const nearRight = Math.abs(event.clientX - rect.right) <= edge
+      const nearBottom = Math.abs(event.clientY - rect.bottom) <= edge
+      if (!nearRight && !nearBottom) return
+
+      tableResizeDragRef.current = {
+        axis: nearRight ? "x" : "y",
+        startX: event.clientX,
+        startY: event.clientY,
+        startSize: nearRight ? rect.width : rect.height,
+        table,
+        cellIndex: cell.cellIndex,
+        row,
+      }
+      event.preventDefault()
+    }
+
+    const handleMouseMoveForDrag = (event: MouseEvent) => {
+      const resize = tableResizeDragRef.current
+      if (resize) {
+        event.preventDefault()
+        if (resize.axis === "x") {
+          const delta = event.clientX - resize.startX
+          const next = Math.max(72, Math.min(720, resize.startSize + delta))
+          Array.from(resize.table.rows).forEach((row) => {
+            const cell = row.cells[resize.cellIndex]
+            if (cell) cell.style.width = `${Math.round(next)}px`
+          })
+          resize.table.style.tableLayout = "fixed"
+          resize.table.style.width = resize.table.style.width || "100%"
+        } else {
+          const delta = event.clientY - resize.startY
+          const next = Math.max(28, Math.min(320, resize.startSize + delta))
+          Array.from(resize.row.cells).forEach((cell) => {
+            cell.style.height = `${Math.round(next)}px`
+          })
+        }
+        return
+      }
+
+      const move = tableMoveDragRef.current
+      if (!move) return
+      event.preventDefault()
+      const editorEl = getEditorElement()
+      if (!editorEl) return
+      const table = move.table
+      if (!editorEl.contains(table)) return
+
+      const siblings = Array.from(editorEl.children).filter((el) => el !== table)
+      const before = siblings.find((el) => {
+        const rect = el.getBoundingClientRect()
+        return event.clientY < rect.top + rect.height / 2
+      })
+      if (before) {
+        editorEl.insertBefore(table, before)
+      } else {
+        editorEl.appendChild(table)
+      }
+    }
+
+    const handleMouseUp = () => {
+      const resize = tableResizeDragRef.current
+      if (resize) {
+        tableResizeDragRef.current = null
+        syncEditorHtml()
+        showHoverForTable(resize.table)
+      }
+
+      const move = tableMoveDragRef.current
+      if (move) {
+        move.table.classList.remove(styles.tableDragging)
+        tableMoveDragRef.current = null
+        syncEditorHtml()
+        showHoverForTable(move.table)
+      }
     }
 
     document.addEventListener("selectionchange", updateSelectionUi)
     window.addEventListener("scroll", updateSelectionUi, true)
     window.addEventListener("resize", updateSelectionUi)
     document.addEventListener("mousemove", updateTableHoverUi)
+    document.addEventListener("mousedown", handleMouseDown)
+    document.addEventListener("mousemove", handleMouseMoveForDrag)
+    document.addEventListener("mouseup", handleMouseUp)
     return () => {
       document.removeEventListener("selectionchange", updateSelectionUi)
       window.removeEventListener("scroll", updateSelectionUi, true)
       window.removeEventListener("resize", updateSelectionUi)
       document.removeEventListener("mousemove", updateTableHoverUi)
+      document.removeEventListener("mousedown", handleMouseDown)
+      document.removeEventListener("mousemove", handleMouseMoveForDrag)
+      document.removeEventListener("mouseup", handleMouseUp)
     }
-  }, [])
+  }, [syncEditorHtml])
 
-  if (!hasLoaded || status === "loading") {
+  if (!hasLoaded) {
     return <div className={`${styles.container} ${theme === "light" ? styles.containerLight : ""}`} />
   }
 
@@ -802,6 +1056,15 @@ export default function DocumentEditor({ docId }: { docId: string }) {
 
   return (
     <div className={`${styles.container} ${theme === "light" ? styles.containerLight : ""}`}>
+      {isExportingPdf && (
+        <div className={styles.exportOverlay} role="status" aria-live="polite" aria-label="Downloading PDF">
+          <div className={styles.exportOverlayCard}>
+            <div className={styles.exportSpinner} />
+            <div className={styles.exportText}>Downloading PDF...</div>
+            <div className={styles.exportSubtext}>Please wait while we prepare your file.</div>
+          </div>
+        </div>
+      )}
       <header className={styles.header}>
         <div className={styles.headerLeft}>
           <button className={styles.secondaryButton} onClick={handleBack}>
@@ -824,6 +1087,18 @@ export default function DocumentEditor({ docId }: { docId: string }) {
               <button className={`${styles.headerActionButton} ${styles.hideOnTablet}`} type="button" title="Current save status">
                 {saveState === "saving" ? "Saving…" : saveState === "error" ? "Save Failed" : "Saved"}
               </button>
+              <button
+                className={`${styles.headerActionButton} ${styles.hideOnTablet}`}
+                type="button"
+                title="Shared link viewers"
+              >
+                {shareInfo.isShared ? `Views ${shareInfo.views}` : "Not Shared"}
+              </button>
+              {shareInfo.isShared && (
+                <button className={`${styles.headerActionButton} ${styles.hideOnTablet}`} type="button" title="Share settings">
+                  {shareInfo.lockEnabled ? "Locked" : "Open"}{shareInfo.oneTimeView ? " • 1-Time" : ""}
+                </button>
+              )}
               <button className={styles.headerActionButton} type="button" onClick={() => void persist(title, contentHtml)} title="Save now">
                 Save
               </button>
@@ -833,14 +1108,21 @@ export default function DocumentEditor({ docId }: { docId: string }) {
               <UserMenu />
             </>
           ) : (
-            <button
-              className={styles.headerPrimaryButton}
-              type="button"
-              onClick={() => signIn("google", { callbackUrl: `/documents/${docId}` })}
-              title="Sign in to sync and share"
-            >
-              Sign In
-            </button>
+            <>
+              {guestMode && (
+                <button className={styles.headerPrimaryButton} type="button" onClick={handleShare} title="Create view-only link">
+                  Share View
+                </button>
+              )}
+              <button
+                className={styles.headerPrimaryButton}
+                type="button"
+                onClick={() => signIn("google", { callbackUrl: `/documents/${docId}` })}
+                title="Sign in to sync and share"
+              >
+                Sign In
+              </button>
+            </>
           )}
         </div>
       </header>
@@ -893,6 +1175,15 @@ export default function DocumentEditor({ docId }: { docId: string }) {
           )}
           {tableHoverUi.visible && (
             <div className={styles.tableHoverPanel} style={{ left: tableHoverUi.rightX, top: tableHoverUi.y }}>
+              <button className={styles.tableHoverTiny} onMouseDown={startMoveTableDrag} title="Drag to move table">
+                Move
+              </button>
+              <button className={styles.tableHoverTiny} onMouseDown={keepSelectionOnMouseDown} onClick={() => moveTableStep("up")} title="Move table up">
+                Up
+              </button>
+              <button className={styles.tableHoverTiny} onMouseDown={keepSelectionOnMouseDown} onClick={() => moveTableStep("down")} title="Move table down">
+                Down
+              </button>
               <button className={styles.tableHoverTiny} onMouseDown={keepSelectionOnMouseDown} onClick={addTableColumnFromHover} title="Add column">
                 +Col
               </button>
@@ -904,6 +1195,12 @@ export default function DocumentEditor({ docId }: { docId: string }) {
               </button>
               <button className={styles.tableHoverTiny} onMouseDown={keepSelectionOnMouseDown} onClick={removeTableRowFromHover} title="Remove row">
                 -Row
+              </button>
+              <button className={styles.tableHoverTiny} onMouseDown={keepSelectionOnMouseDown} onClick={() => adjustTableWidthFromHover(-10)} title="Decrease table width">
+                T-
+              </button>
+              <button className={styles.tableHoverTiny} onMouseDown={keepSelectionOnMouseDown} onClick={() => adjustTableWidthFromHover(10)} title="Increase table width">
+                T+
               </button>
               <button className={styles.tableHoverTiny} onMouseDown={keepSelectionOnMouseDown} onClick={() => resizeTableCellFromHover("width", -24)} title="Decrease cell width">
                 W-
@@ -928,7 +1225,14 @@ export default function DocumentEditor({ docId }: { docId: string }) {
           <div className={styles.docTitle}>{title.trim().length ? title : "Untitled Document"}</div>
           <div className={styles.docHint}>Type your notes here — use the toolbar for formatting.</div>
 
-          <div className={styles.docEditorWrap}>
+          <div
+            className={styles.docEditorWrap}
+            onMouseDown={(event) => {
+              if (event.target !== event.currentTarget) return
+              event.preventDefault()
+              focusEditorAtEnd()
+            }}
+          >
             <RichTextEditor
               valueHtml={contentHtml}
               onChangeHtml={setContentHtml}
@@ -1005,38 +1309,16 @@ export default function DocumentEditor({ docId }: { docId: string }) {
             ))}
           </select>
         </label>
-        <label className={styles.bottomLabel}>
-          Text
-          <input
-            className={styles.bottomColor}
-            type="color"
-            value={textColor}
-            onChange={(event) => {
-              const value = event.target.value
-              setTextColor(value)
-              editorApi.current?.run({ type: "textColor", value })
-            }}
-            title="Text color"
-          />
-        </label>
-        <label className={styles.bottomLabel}>
-          Highlight
-          <input
-            className={styles.bottomColor}
-            type="color"
-            value={highlightColor}
-            onChange={(event) => {
-              const value = event.target.value
-              setHighlightColor(value)
-              editorApi.current?.run({ type: "highlightColor", value })
-            }}
-            title="Highlight color"
-          />
-        </label>
         <div className={styles.bottomSpacer} />
-        <button className={styles.bottomButton} onMouseDown={keepSelectionOnMouseDown} onClick={handleDownloadPdf} title="Download as PDF">
+        <button
+          className={styles.bottomButton}
+          onMouseDown={keepSelectionOnMouseDown}
+          onClick={handleDownloadPdf}
+          title="Download as PDF"
+          disabled={isExportingPdf}
+        >
           <Download size={16} />
-          PDF
+          {isExportingPdf ? "Preparing..." : "PDF"}
         </button>
         <button className={styles.bottomButton} onMouseDown={keepSelectionOnMouseDown} onClick={() => editorApi.current?.run({ type: "clear" })} title="Clear formatting">
           <Eraser size={16} />

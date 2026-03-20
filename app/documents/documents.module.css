@@ -356,10 +356,10 @@
 .docPaper {
   width: min(1020px, 100%);
   position: relative;
-  background: var(--doc-paper-bg);
-  border: 1px solid var(--doc-paper-border);
-  border-radius: 16px;
-  box-shadow: var(--doc-paper-shadow);
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
   padding: 28px 28px 120px;
   backdrop-filter: none;
 }
@@ -382,14 +382,15 @@
   display: flow-root;
   padding-top: 10px;
   padding-bottom: 2px;
-  min-height: 0;
+  min-height: clamp(260px, 56vh, 820px);
+  cursor: text;
 }
 
 .docEditor {
   display: block;
   width: 100%;
   overflow-wrap: anywhere;
-  min-height: 1px;
+  min-height: 100%;
   color: var(--doc-text);
   font-size: 15px;
   line-height: 1.55;
@@ -483,6 +484,12 @@
 .docEditor :global(th) {
   background: var(--surface-soft);
   font-weight: 800;
+}
+
+.tableDragging {
+  opacity: 0.72;
+  outline: 2px dashed var(--input-focus);
+  outline-offset: 2px;
 }
 
 .selectionToolbar {
@@ -729,12 +736,73 @@
   min-width: 6px;
 }
 
+.exportOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(2, 6, 23, 0.45);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+}
+
+.exportOverlayCard {
+  width: min(420px, 92vw);
+  border-radius: 14px;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-strong);
+  box-shadow: var(--shadow);
+  padding: 18px 16px;
+  text-align: center;
+}
+
+.exportSpinner {
+  width: 28px;
+  height: 28px;
+  margin: 0 auto 10px;
+  border-radius: 50%;
+  border: 3px solid rgba(148, 163, 184, 0.26);
+  border-top-color: var(--surface-accent);
+  animation: exportSpin 0.8s linear infinite;
+}
+
+.exportText {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.exportSubtext {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+@keyframes exportSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .hideOnTablet {
   display: inline-flex;
 }
 
 .hideOnMobile {
   display: inline-flex;
+}
+
+@media (max-width: 1280px) {
+  .bottomBar {
+    left: 10px;
+    right: 10px;
+    width: auto;
+    max-width: none;
+    transform: none;
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 1160px) {
@@ -763,6 +831,14 @@
   .modeTabs {
     display: none;
   }
+
+  .bottomBar {
+    gap: 5px;
+  }
+
+  .bottomSelect {
+    min-width: 94px;
+  }
 }
 
 @media (max-width: 980px) {
@@ -776,7 +852,7 @@
 
   .docPaper {
     padding: 18px 14px 116px;
-    border-radius: 12px;
+    border-radius: 0;
   }
 
   .docTitle {
@@ -937,7 +1013,7 @@
 
   .docPaper {
     padding: 14px 10px 106px;
-    border-radius: 10px;
+    border-radius: 0;
   }
 
   .docTitle {

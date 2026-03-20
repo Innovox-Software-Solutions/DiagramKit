@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import prisma from "@/lib/prisma"
 import { getClientId, rateLimit } from "@/lib/rate-limit"
 import { safeDecodeShapes } from "@/lib/board-serialization"
+import { withCached } from "@/lib/server-cache"
 
 type Params = {
   params: Promise<{ shareId: string }>
@@ -35,18 +36,20 @@ export async function GET(req: Request, { params }: Params) {
       })
     }
 
-    const board = await prisma.board.findFirst({
-      where: {
-        shareId: normalizedShareId,
-        isPublic: true,
-      },
-      select: {
-        id: true,
-        name: true,
-        shapes: true,
-        shapesCompressed: true,
-        updatedAt: true,
-      },
+    const board = await withCached(`board:shared:${normalizedShareId}`, 8_000, async () => {
+      return prisma.board.findFirst({
+        where: {
+          shareId: normalizedShareId,
+          isPublic: true,
+        },
+        select: {
+          id: true,
+          name: true,
+          shapes: true,
+          shapesCompressed: true,
+          updatedAt: true,
+        },
+      })
     })
 
     if (!board) {

@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth"
 import prisma from "@/lib/prisma"
 import { getClientId, rateLimit } from "@/lib/rate-limit"
 import { encodeShapes } from "@/lib/board-serialization"
+import { deleteCachedByPrefix } from "@/lib/server-cache"
 
 const isMongoObjectId = (value: string) => /^[a-f\d]{24}$/i.test(value)
 
@@ -67,11 +68,13 @@ export async function POST(req: Request) {
     const safeName = name.length > 0 ? name.slice(0, 80) : "Untitled Board"
     const shapesCompressed = encodeShapes(shapes)
 
+    const userId = session.user.id as string
+
     if (boardId && isMongoObjectId(boardId)) {
       const updated = await prisma.board.updateMany({
         where: {
           id: boardId,
-          userId: session.user.id as string,
+          userId,
         },
         data: {
           name: safeName,
@@ -81,6 +84,7 @@ export async function POST(req: Request) {
       })
 
       if (updated.count > 0) {
+        deleteCachedByPrefix(`board:list:${userId}:`)
         return NextResponse.json(
           { success: true, boardId },
           { headers: { "Cache-Control": "no-store" } },
@@ -94,9 +98,10 @@ export async function POST(req: Request) {
         name: safeName,
         shapes: [],
         shapesCompressed,
-        userId: session.user.id as string,
+        userId,
       },
     })
+    deleteCachedByPrefix(`board:list:${userId}:`)
 
     return NextResponse.json(
       { success: true, boardId: board.id },

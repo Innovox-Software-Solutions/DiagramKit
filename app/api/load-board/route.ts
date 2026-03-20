@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth"
 import prisma from "@/lib/prisma"
 import { getClientId, rateLimit } from "@/lib/rate-limit"
 import { safeDecodeShapes } from "@/lib/board-serialization"
+import { withCached } from "@/lib/server-cache"
 
 export async function GET(req: Request) {
   try {
@@ -38,10 +39,13 @@ export async function GET(req: Request) {
         ? Math.max(1, Math.min(100, Number(takeRaw)))
         : 50
 
-    const boards = await prisma.board.findMany({
-      where: { userId: session.user.id as string },
-      orderBy: { updatedAt: "desc" },
-      take,
+    const userId = session.user.id as string
+    const boards = await withCached(`board:list:${userId}:${take}`, 5_000, async () => {
+      return prisma.board.findMany({
+        where: { userId },
+        orderBy: { updatedAt: "desc" },
+        take,
+      })
     })
 
     const normalized = boards.map((board) => ({

@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth"
 import prisma from "@/lib/prisma"
 import { getClientId, rateLimit } from "@/lib/rate-limit"
 import { decodeDocumentHtml, encodeDocumentHtml } from "@/lib/document-serialization"
+import { deleteCachedByPrefix, withCached } from "@/lib/server-cache"
 
 const sanitizeHtml = (html: string) =>
   html
@@ -38,11 +39,14 @@ export async function GET(req: Request) {
       })
     }
 
-    const docs = await prisma.document.findMany({
-      where: { userId: session.user.id as string },
-      select: { id: true, title: true, updatedAt: true },
-      orderBy: { updatedAt: "desc" },
-      take: 200,
+    const userId = session.user.id as string
+    const docs = await withCached(`docs:list:${userId}`, 8_000, async () => {
+      return prisma.document.findMany({
+        where: { userId },
+        select: { id: true, title: true, updatedAt: true },
+        orderBy: { updatedAt: "desc" },
+        take: 200,
+      })
     })
 
     return NextResponse.json(
@@ -107,14 +111,16 @@ export async function POST(req: Request) {
         : `<h2>Highlights</h2><ul><li>Write bullet points</li><li>Use <strong>bold</strong> for important words</li><li>Add headings with H1 / H2</li></ul>`
     const contentHtmlEncoded = encodeDocumentHtml(contentHtml)
 
+    const userId = session.user.id as string
     const document = await prisma.document.create({
       data: {
         title,
         contentHtml: contentHtmlEncoded,
-        userId: session.user.id as string,
+        userId,
       },
       select: { id: true, title: true, contentHtml: true, updatedAt: true },
     })
+    deleteCachedByPrefix(`docs:list:${userId}`)
 
     return NextResponse.json(
       {
