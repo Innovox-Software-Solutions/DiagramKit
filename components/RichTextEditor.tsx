@@ -52,6 +52,23 @@ const runCommand = (command: RichTextCommand) => {
   }
 };
 
+const normalizeHtml = (html: string): string => {
+  let next = html;
+
+  // Normalize <br/> to <br> for easier processing.
+  next = next.replace(/<br\s*\/>/gi, '<br>');
+
+  // Collapse excessive blank lines created as <div><br></div>.
+  next = next.replace(/(?:<div>\s*<br>\s*<\/div>\s*){3,}/gi, '<div><br></div><div><br></div>');
+
+  // If content is only blank lines, treat it as empty.
+  if (/^(?:\s*<div>\s*<br>\s*<\/div>\s*)+$/i.test(next)) {
+    next = '';
+  }
+
+  return next;
+};
+
 export default function RichTextEditor({
   valueHtml,
   onChangeHtml,
@@ -80,6 +97,14 @@ export default function RichTextEditor({
   }, [onReady]);
 
   useEffect(() => {
+    try {
+      document.execCommand('defaultParagraphSeparator', false, 'div');
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
     const el = ref.current;
     if (!el) return;
     if (el.innerHTML !== valueHtml) {
@@ -90,12 +115,23 @@ export default function RichTextEditor({
   const handleInput = () => {
     const el = ref.current;
     if (!el) return;
-    onChangeHtml(el.innerHTML);
+    const raw = el.innerHTML;
+    const normalized = normalizeHtml(raw);
+    if (normalized !== raw) {
+      el.innerHTML = normalized;
+    }
+    onChangeHtml(normalized);
   };
 
   const handlePaste: React.ClipboardEventHandler<HTMLDivElement> = (event) => {
     event.preventDefault();
     const text = event.clipboardData.getData('text/plain');
+    if (text.includes('\n')) {
+      const escape = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const html = escape(text).replace(/\n/g, '<br/>');
+      document.execCommand('insertHTML', false, html);
+      return;
+    }
     document.execCommand('insertText', false, text);
   };
 
@@ -108,10 +144,9 @@ export default function RichTextEditor({
       data-placeholder={placeholder ?? ''}
       onInput={handleInput}
       onPaste={handlePaste}
-      spellCheck
+      spellCheck={false}
       role="textbox"
       aria-multiline="true"
     />
   );
 }
-

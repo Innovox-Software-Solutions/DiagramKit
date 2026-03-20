@@ -2196,7 +2196,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
             };
         }));
 
-        if (session?.user?.id && boardToRename?.shapes && boardToRename.shapes.length > 0) {
+        if (session?.user?.id && boardToRename) {
             const resolvedBoardId = isMongoObjectId(boardToRename.id)
                 ? boardToRename.id
                 : (serverBoardIdByLocalIdRef.current.get(boardToRename.id) ?? '');
@@ -2207,7 +2207,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
                 body: JSON.stringify({
                     boardId: resolvedBoardId || undefined,
                     name: trimmedName,
-                    shapes: boardToRename.shapes,
+                    shapes: Array.isArray(boardToRename.shapes) ? boardToRename.shapes : [],
                 }),
             })
                 .then(async (res) => {
@@ -2252,6 +2252,30 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
         setRenameInputValue('');
         setIsTitleEditing(false);
         setTitleDraft('');
+
+        if (session?.user?.id) {
+            fetch('/api/save-board', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: newBoard.name, shapes: [] }),
+            })
+                .then(async (res) => {
+                    if (!res.ok) return null;
+                    const data = await res.json();
+                    const serverBoardId = typeof data?.boardId === 'string' ? data.boardId : '';
+                    if (!serverBoardId) return null;
+
+                    serverBoardIdByLocalIdRef.current.set(newBoard.id, serverBoardId);
+                    setBoards(prevBoards => prevBoards.map(board => (
+                        board.id === newBoard.id ? { ...board, id: serverBoardId } : board
+                    )));
+                    setActiveBoardId(prevActiveBoardId => (
+                        prevActiveBoardId === newBoard.id ? serverBoardId : prevActiveBoardId
+                    ));
+                    return null;
+                })
+                .catch((error) => console.error('Failed to create board on server', error));
+        }
     };
 
     const handleSwitchBoard = (boardId: string) => {
