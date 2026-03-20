@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { decompressFromUTF16 } from 'lz-string';
 import RichTextEditor from '@/components/RichTextEditor';
 import styles from './both.module.css';
 
@@ -20,6 +21,14 @@ type StoredDocument = {
 const LIST_KEY = 'diagramkit.documents.v1';
 const ACTIVE_KEY = 'diagramkit.documents.active.v1';
 const docKey = (id: string) => `diagramkit.document.${id}.v1`;
+const DOC_COMPRESSED_PREFIX = 'lz:';
+
+const decodeLocalHtml = (value: string | undefined) => {
+  if (!value) return '';
+  if (!value.startsWith(DOC_COMPRESSED_PREFIX)) return value;
+  const decoded = decompressFromUTF16(value.slice(DOC_COMPRESSED_PREFIX.length));
+  return decoded ?? '';
+};
 
 const safeParseList = (value: string | null): DocumentListRecord[] => {
   if (!value) return [];
@@ -48,7 +57,7 @@ const safeParseDoc = (value: string | null): StoredDocument => {
     const parsed = JSON.parse(value) as Partial<StoredDocument>;
     return {
       title: String(parsed.title ?? 'Untitled Document'),
-      contentHtml: typeof parsed.contentHtml === 'string' ? parsed.contentHtml : undefined,
+      contentHtml: typeof parsed.contentHtml === 'string' ? decodeLocalHtml(parsed.contentHtml) : undefined,
       content: typeof parsed.content === 'string' ? parsed.content : undefined,
       updatedAt: Number(parsed.updatedAt ?? Date.now()),
     };

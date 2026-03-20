@@ -5,7 +5,7 @@ import { Whiteboard } from '@/components/Whiteboard';
 import DocumentsPanel from './DocumentsPanel';
 import styles from './both.module.css';
 
-const PANEL_WIDTH = 420;
+const PANEL_WIDTH = 440;
 const TOPBAR_HEIGHT = 56;
 
 export default function BothWorkspace() {
