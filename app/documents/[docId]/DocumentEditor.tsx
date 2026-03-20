@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { signIn, useSession } from "next-auth/react";
@@ -344,7 +343,6 @@ export default function DocumentEditor({ docId }: { docId: string }) {
             <button className={styles.headerActionButton} onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}>
               {theme === "dark" ? "Light Mode" : "Dark Mode"}
             </button>
-            <UserMenu />
           </div>
         </header>
         <div className={styles.list}>
@@ -378,37 +376,33 @@ export default function DocumentEditor({ docId }: { docId: string }) {
           />
         </div>
 
-        <nav className={styles.modeTabs} aria-label="Workspace mode">
-          <Link href="/documents" className={`${styles.modeTab} ${styles.modeTabActive}`}>
-            Document
-          </Link>
-          <Link href="/both" className={styles.modeTab}>
-            Both
-          </Link>
-          <Link href="/canvas" className={styles.modeTab}>
-            Canvas
-          </Link>
-        </nav>
-
         <div className={styles.headerRight}>
           <button className={styles.headerActionButton} onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}>
             {theme === "dark" ? "Light Mode" : "Dark Mode"}
           </button>
-          {guestMode && !session?.user?.id && (
-            <button className={styles.headerActionButton} type="button" title="Current storage mode">
-              Guest Local
+          {session?.user?.id ? (
+            <>
+              <button className={styles.headerActionButton} type="button" title="Current save status">
+                {saveState === "saving" ? "Saving…" : saveState === "error" ? "Save Failed" : "Saved"}
+              </button>
+              <button className={styles.headerActionButton} type="button" onClick={() => void persist(title, contentHtml)} title="Save now">
+                Save
+              </button>
+              <button className={styles.headerPrimaryButton} type="button" onClick={handleShare} title="Create view-only link">
+                Share View
+              </button>
+              <UserMenu />
+            </>
+          ) : (
+            <button
+              className={styles.headerPrimaryButton}
+              type="button"
+              onClick={() => signIn("google", { callbackUrl: `/documents/${docId}` })}
+              title="Sign in to sync and share"
+            >
+              Sign In
             </button>
           )}
-          <button className={styles.headerActionButton} type="button" title="Current save status">
-            {saveState === "saving" ? "Saving…" : saveState === "error" ? "Save Failed" : "Saved"}
-          </button>
-          <button className={styles.headerActionButton} type="button" onClick={() => void persist(title, contentHtml)} title="Save now">
-            Save
-          </button>
-          <button className={styles.headerPrimaryButton} type="button" onClick={handleShare} title={guestMode && !session?.user?.id ? "Sign in to share" : "Create view-only link"}>
-            {guestMode && !session?.user?.id ? "Sign In to Share" : "Share View"}
-          </button>
-          <UserMenu />
         </div>
       </header>
 
