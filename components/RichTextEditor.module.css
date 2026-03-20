@@ -6,7 +6,6 @@
 
 .editor:empty:before {
   content: attr(data-placeholder);
-  color: rgba(226, 232, 240, 0.55);
+  color: var(--editor-placeholder-color, rgba(226, 232, 240, 0.55));
   pointer-events: none;
 }
-

@@ -13,7 +13,10 @@ export type RichTextCommand =
   | { type: 'divider' }
   | { type: 'link'; href: string }
   | { type: 'unlink' }
-  | { type: 'clear' };
+  | { type: 'clear' }
+  | { type: 'textColor'; value: string }
+  | { type: 'highlightColor'; value: string }
+  | { type: 'fontFamily'; value: string };
 
 const runCommand = (command: RichTextCommand) => {
   if (typeof document === 'undefined') return;
@@ -48,6 +51,15 @@ const runCommand = (command: RichTextCommand) => {
       break;
     case 'clear':
       document.execCommand('removeFormat');
+      break;
+    case 'textColor':
+      document.execCommand('foreColor', false, command.value);
+      break;
+    case 'highlightColor':
+      document.execCommand('hiliteColor', false, command.value);
+      break;
+    case 'fontFamily':
+      document.execCommand('fontName', false, command.value);
       break;
   }
 };
