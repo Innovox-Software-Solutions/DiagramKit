@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma"
 import { getClientId, rateLimit } from "@/lib/rate-limit"
 import { encodeDocumentHtml } from "@/lib/document-serialization"
 import { hashSharePasscode } from "@/lib/share-security"
+import { findGuestShare, upsertGuestShare } from "@/lib/guest-share-store"
 
 const makeShareId = () => crypto.randomBytes(9).toString("base64url")
 
@@ -71,44 +72,70 @@ export async function POST(req: Request) {
         { status: 400, headers: { "Cache-Control": "no-store" } },
       )
     }
+    const hasPrismaGuestModel = Boolean((prisma as unknown as { guestDocumentShare?: unknown }).guestDocumentShare)
     const existing =
       shareIdInput.length > 0
-        ? await prisma.guestDocumentShare.findFirst({
-            where: { shareId: shareIdInput },
-            select: { shareId: true, sharePassHash: true, shareViewCount: true },
-          })
+        ? hasPrismaGuestModel
+          ? await prisma.guestDocumentShare.findFirst({
+              where: { shareId: shareIdInput },
+              select: { shareId: true, sharePassHash: true, shareViewCount: true },
+            })
+          : await findGuestShare(shareIdInput)
         : null
 
     const shareId = existing?.shareId ?? makeShareId()
     const alreadyLocked = !!existing?.sharePassHash
     const finalLocked = alreadyLocked ? true : (lockEnabled || passcode.length > 0)
-    const finalPassHash = alreadyLocked ? existing?.sharePassHash : (finalLocked && passcode ? hashSharePasscode(passcode) : null)
+    const finalPassHash = alreadyLocked
+      ? (existing?.sharePassHash ?? null)
+      : (finalLocked && passcode ? hashSharePasscode(passcode) : null)
 
+    const encoded = encodeDocumentHtml(contentHtml)
     if (existing) {
-      await prisma.guestDocumentShare.update({
-        where: { shareId },
-        data: {
-          title,
-          contentHtml: encodeDocumentHtml(contentHtml),
-          shareLocked: finalLocked,
-          sharePassHash: finalPassHash,
-          shareOneTime: false,
-        },
-        select: { shareId: true },
-      })
-    } else {
-      await prisma.guestDocumentShare.create({
-        data: {
+      if (hasPrismaGuestModel) {
+        await prisma.guestDocumentShare.update({
+          where: { shareId },
+          data: {
+            title,
+            contentHtml: encoded,
+            shareLocked: finalLocked,
+            sharePassHash: finalPassHash,
+            shareOneTime: false,
+          },
+          select: { shareId: true },
+        })
+      } else {
+        await upsertGuestShare({
           shareId,
           title,
-          contentHtml: encodeDocumentHtml(contentHtml),
+          contentHtml: encoded,
           shareLocked: finalLocked,
           sharePassHash: finalPassHash,
-          shareOneTime: false,
-          shareViewCount: 0,
-        },
-        select: { shareId: true },
-      })
+        })
+      }
+    } else {
+      if (hasPrismaGuestModel) {
+        await prisma.guestDocumentShare.create({
+          data: {
+            shareId,
+            title,
+            contentHtml: encoded,
+            shareLocked: finalLocked,
+            sharePassHash: finalPassHash,
+            shareOneTime: false,
+            shareViewCount: 0,
+          },
+          select: { shareId: true },
+        })
+      } else {
+        await upsertGuestShare({
+          shareId,
+          title,
+          contentHtml: encoded,
+          shareLocked: finalLocked,
+          sharePassHash: finalPassHash,
+        })
+      }
     }
 
     const baseUrl = getBaseUrl(req)

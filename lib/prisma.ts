@@ -10,7 +10,13 @@ declare global {
   var prismaGlobal: undefined | ReturnType<typeof prismaClientSingleton>
 }
 
-const prisma = globalThis.prismaGlobal ?? prismaClientSingleton()
+const existing = globalThis.prismaGlobal as (ReturnType<typeof prismaClientSingleton> & {
+  guestDocumentShare?: unknown
+  guestDocumentShareView?: unknown
+}) | undefined
+
+const hasGuestShareModels = !!existing?.guestDocumentShare && !!existing?.guestDocumentShareView
+const prisma = existing && hasGuestShareModels ? existing : prismaClientSingleton()
 
 export default prisma
 

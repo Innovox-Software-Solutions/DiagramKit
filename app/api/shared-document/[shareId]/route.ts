@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma"
 import { getClientId, rateLimit } from "@/lib/rate-limit"
 import { decodeDocumentHtml } from "@/lib/document-serialization"
 import { verifySharePasscode } from "@/lib/share-security"
+import { createGuestShareViewAndIncrement, findGuestShare, findGuestShareView } from "@/lib/guest-share-store"
 
 type Params = {
   params: Promise<{ shareId: string }>
@@ -51,18 +52,21 @@ export async function GET(req: Request, { params }: Params) {
     })
 
     if (!document) {
-      const guestShare = await prisma.guestDocumentShare.findFirst({
-        where: { shareId: normalizedShareId },
-        select: {
-          shareId: true,
-          title: true,
-          contentHtml: true,
-          updatedAt: true,
-          shareLocked: true,
-          sharePassHash: true,
-          shareOneTime: true,
-        },
-      })
+      const hasPrismaGuestModel = Boolean((prisma as unknown as { guestDocumentShare?: unknown }).guestDocumentShare)
+      const guestShare = hasPrismaGuestModel
+        ? await prisma.guestDocumentShare.findFirst({
+            where: { shareId: normalizedShareId },
+            select: {
+              shareId: true,
+              title: true,
+              contentHtml: true,
+              updatedAt: true,
+              shareLocked: true,
+              sharePassHash: true,
+              shareOneTime: true,
+            },
+          })
+        : await findGuestShare(normalizedShareId)
       if (!guestShare) {
         return NextResponse.json(
           { error: "Shared document not found" },
@@ -84,15 +88,17 @@ export async function GET(req: Request, { params }: Params) {
       }
 
       const viewerKey = `${normalizedShareId}:${clientId}`
-      const alreadyViewed = await prisma.guestDocumentShareView.findUnique({
-        where: {
-          shareId_viewerId: {
-            shareId: normalizedShareId,
-            viewerId: viewerKey,
-          },
-        },
-        select: { id: true },
-      })
+      const alreadyViewed = hasPrismaGuestModel
+        ? await prisma.guestDocumentShareView.findUnique({
+            where: {
+              shareId_viewerId: {
+                shareId: normalizedShareId,
+                viewerId: viewerKey,
+              },
+            },
+            select: { id: true },
+          })
+        : await findGuestShareView(normalizedShareId, viewerKey)
 
       if (guestShare.shareOneTime && alreadyViewed) {
         return NextResponse.json(
@@ -102,18 +108,22 @@ export async function GET(req: Request, { params }: Params) {
       }
 
       if (!alreadyViewed) {
-        await prisma.$transaction([
-          prisma.guestDocumentShareView.create({
-            data: {
-              shareId: normalizedShareId,
-              viewerId: viewerKey,
-            },
-          }),
-          prisma.guestDocumentShare.update({
-            where: { shareId: normalizedShareId },
-            data: { shareViewCount: { increment: 1 } },
-          }),
-        ])
+        if (hasPrismaGuestModel) {
+          await prisma.$transaction([
+            prisma.guestDocumentShareView.create({
+              data: {
+                shareId: normalizedShareId,
+                viewerId: viewerKey,
+              },
+            }),
+            prisma.guestDocumentShare.update({
+              where: { shareId: normalizedShareId },
+              data: { shareViewCount: { increment: 1 } },
+            }),
+          ])
+        } else {
+          await createGuestShareViewAndIncrement(normalizedShareId, viewerKey)
+        }
       }
 
       return NextResponse.json(
