@@ -344,7 +344,7 @@ export default function DocumentEditor({ docId }: { docId: string }) {
     router.push("/documents");
   };
 
-  const upsertShare = async (passcode = "") => {
+  const upsertShare = async (passcode = "", unlock = false) => {
     const endpoint = session?.user?.id ? "/api/share-document" : "/api/share-guest-document"
     const guestShareMetaRaw = localStorage.getItem(guestShareKey(docId))
     let guestShareMeta: { shareId?: string } | null = null
@@ -358,6 +358,7 @@ export default function DocumentEditor({ docId }: { docId: string }) {
     const payload = session?.user?.id
       ? {
           docId,
+          unlock,
           lockEnabled: passcode.trim().length > 0,
           passcode: passcode.trim(),
         }
@@ -365,6 +366,7 @@ export default function DocumentEditor({ docId }: { docId: string }) {
           title,
           contentHtml,
           shareId: guestShareMeta?.shareId ?? "",
+          unlock,
           lockEnabled: passcode.trim().length > 0,
           passcode: passcode.trim(),
         }
@@ -429,6 +431,18 @@ export default function DocumentEditor({ docId }: { docId: string }) {
       setNewPasscode("")
     } catch (error) {
       setShareError(error instanceof Error ? error.message : "Unable to set passcode")
+    } finally {
+      setShareBusy(false)
+    }
+  }
+
+  const handleRemovePasscode = async () => {
+    setShareError("")
+    setShareBusy(true)
+    try {
+      await upsertShare("", true)
+    } catch (error) {
+      setShareError(error instanceof Error ? error.message : "Unable to remove passcode")
     } finally {
       setShareBusy(false)
     }
@@ -1111,7 +1125,12 @@ export default function DocumentEditor({ docId }: { docId: string }) {
               </button>
             </div>
             {shareInfo.lockEnabled ? (
-              <div className={styles.shareLockedNote}>Passcode enabled. It cannot be removed from this screen.</div>
+              <div className={styles.sharePasscodeRow}>
+                <div className={styles.shareLockedNote}>Passcode enabled for this link.</div>
+                <button className={styles.headerActionButton} type="button" onClick={handleRemovePasscode} disabled={shareBusy}>
+                  Remove Passcode
+                </button>
+              </div>
             ) : (
               <>
                 {!showPasscodeForm && (

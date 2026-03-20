@@ -54,7 +54,7 @@ export async function POST(req: Request) {
       )
     }
 
-    const body = data as { title?: unknown; contentHtml?: unknown; passcode?: unknown; lockEnabled?: unknown; shareId?: unknown }
+    const body = data as { title?: unknown; contentHtml?: unknown; passcode?: unknown; lockEnabled?: unknown; shareId?: unknown; unlock?: unknown }
     const title =
       typeof body.title === "string" && body.title.trim().length > 0
         ? body.title.trim().slice(0, 160)
@@ -64,6 +64,7 @@ export async function POST(req: Request) {
         ? sanitizeHtml(body.contentHtml.slice(0, 300_000))
         : ""
     const lockEnabled = body.lockEnabled === true
+    const unlockRequested = body.unlock === true
     const passcode = typeof body.passcode === "string" ? body.passcode.trim() : ""
     const shareIdInput = typeof body.shareId === "string" ? body.shareId.trim() : ""
     if ((lockEnabled || passcode.length > 0) && passcode.length > 0 && passcode.length < 4) {
@@ -84,11 +85,8 @@ export async function POST(req: Request) {
         : null
 
     const shareId = existing?.shareId ?? makeShareId()
-    const alreadyLocked = !!existing?.sharePassHash
-    const finalLocked = alreadyLocked ? true : (lockEnabled || passcode.length > 0)
-    const finalPassHash = alreadyLocked
-      ? (existing?.sharePassHash ?? null)
-      : (finalLocked && passcode ? hashSharePasscode(passcode) : null)
+    const finalLocked = unlockRequested ? false : (lockEnabled || passcode.length > 0)
+    const finalPassHash = unlockRequested ? null : (finalLocked && passcode ? hashSharePasscode(passcode) : null)
 
     const encoded = encodeDocumentHtml(contentHtml)
     if (existing) {

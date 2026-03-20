@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
 
 type SharedDocument = {
   title: string
@@ -8,7 +9,9 @@ type SharedDocument = {
   updatedAt: string
 }
 
-export default function SharedDocumentPage({ params }: { params: { shareId: string } }) {
+export default function SharedDocumentPage() {
+  const params = useParams<{ shareId: string }>()
+  const shareId = typeof params?.shareId === "string" ? params.shareId : ""
   const [theme, setTheme] = useState<"dark" | "light">("dark")
   const [doc, setDoc] = useState<SharedDocument | null>(null)
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading")
@@ -37,7 +40,7 @@ export default function SharedDocumentPage({ params }: { params: { shareId: stri
     const run = async () => {
       try {
         const query = submittedPasscode.trim().length ? `?passcode=${encodeURIComponent(submittedPasscode.trim())}` : ""
-        const res = await fetch(`/api/shared-document/${encodeURIComponent(params.shareId)}${query}`, {
+        const res = await fetch(`/api/shared-document/${encodeURIComponent(shareId)}${query}`, {
           method: "GET",
           headers: { Accept: "application/json" },
         })
@@ -65,7 +68,7 @@ export default function SharedDocumentPage({ params }: { params: { shareId: stri
     return () => {
       cancelled = true
     }
-  }, [params.shareId, submittedPasscode])
+  }, [shareId, submittedPasscode])
 
   return (
     <main

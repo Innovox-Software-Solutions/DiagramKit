@@ -56,7 +56,7 @@ export async function POST(req: Request) {
       )
     }
 
-    const body = data as { docId?: unknown; passcode?: unknown; lockEnabled?: unknown }
+    const body = data as { docId?: unknown; passcode?: unknown; lockEnabled?: unknown; unlock?: unknown }
     const docId = typeof body.docId === "string" ? body.docId.trim() : ""
     if (!isMongoObjectId(docId)) {
       return NextResponse.json(
@@ -66,6 +66,7 @@ export async function POST(req: Request) {
     }
 
     const passcode = typeof body.passcode === "string" ? body.passcode.trim() : ""
+    const unlockRequested = body.unlock === true
     const lockEnabledRequested = body.lockEnabled === true || passcode.length > 0
     if (lockEnabledRequested && passcode.length > 0 && passcode.length < 4) {
       return NextResponse.json(
@@ -87,9 +88,8 @@ export async function POST(req: Request) {
     }
 
     const nextShareId = existing.shareId?.trim() || makeShareId()
-    const alreadyLocked = !!existing.sharePassHash
-    const shareLocked = alreadyLocked ? true : lockEnabledRequested
-    const sharePassHash = alreadyLocked ? existing.sharePassHash : (shareLocked && passcode ? hashSharePasscode(passcode) : null)
+    const shareLocked = unlockRequested ? false : lockEnabledRequested
+    const sharePassHash = unlockRequested ? null : (shareLocked && passcode ? hashSharePasscode(passcode) : null)
     const updated = await prisma.document.update({
       where: { id: existing.id },
       data: { isPublic: true, shareId: nextShareId, shareLocked, sharePassHash, shareOneTime: false },
