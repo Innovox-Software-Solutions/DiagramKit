@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import prisma from "@/lib/prisma"
 import { getClientId, rateLimit } from "@/lib/rate-limit"
+import { decodeDocumentHtml } from "@/lib/document-serialization"
 
 type Params = {
   params: Promise<{ shareId: string }>
@@ -50,7 +51,7 @@ export async function GET(req: Request, { params }: Params) {
       {
         id: document.id,
         title: document.title,
-        contentHtml: document.contentHtml ?? "",
+        contentHtml: decodeDocumentHtml(document.contentHtml),
         updatedAt: document.updatedAt,
       },
       {

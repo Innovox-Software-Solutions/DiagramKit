@@ -9,10 +9,12 @@ import { Bold, Italic, List, ListOrdered, Heading1, Heading2, SeparatorHorizonta
 import styles from "../documents.module.css";
 
 const FONT_OPTIONS = [
-  { label: "Inter", value: "Inter, Arial, sans-serif" },
-  { label: "Roboto", value: "Roboto, Arial, sans-serif" },
-  { label: "Open Sans", value: "\"Open Sans\", Arial, sans-serif" },
-  { label: "Lobster Two", value: "\"Lobster Two\", serif" },
+  { label: "Inter", value: "var(--font-inter), Inter, sans-serif" },
+  { label: "Manrope", value: "var(--font-manrope), Manrope, sans-serif" },
+  { label: "Space Grotesk", value: "var(--font-space-grotesk), sans-serif" },
+  { label: "Roboto", value: "var(--font-roboto), Roboto, sans-serif" },
+  { label: "Open Sans", value: "var(--font-open-sans), 'Open Sans', sans-serif" },
+  { label: "Lobster Two", value: "var(--font-lobster-two), serif" },
 ]
 
 type LoadedDocument = {
@@ -85,6 +87,7 @@ export default function DocumentEditor({ docId }: { docId: string }) {
 
   const saveTimer = useRef<number | null>(null);
   const editorApi = useRef<null | { run: (command: RichTextCommand) => void; focus: () => void }>(null);
+  const lastDocIdForAutosaveRef = useRef(docId);
 
   useEffect(() => {
     const stored = localStorage.getItem(DOCS_THEME_KEY)
@@ -158,11 +161,23 @@ export default function DocumentEditor({ docId }: { docId: string }) {
           return
         }
 
-        const guestDoc = safeParseDoc(localStorage.getItem(docKey(docId)))
+        const rawGuestDoc = localStorage.getItem(docKey(docId))
+        const list = safeParseList(localStorage.getItem(DOCS_LIST_KEY))
+        const existsInList = list.some((item) => item.id === docId)
+
+        if (!rawGuestDoc) {
+          if (existsInList) {
+            const nextList = list.filter((item) => item.id !== docId)
+            localStorage.setItem(DOCS_LIST_KEY, JSON.stringify(nextList))
+          }
+          router.replace("/documents")
+          return
+        }
+
+        const guestDoc = safeParseDoc(rawGuestDoc)
         if (cancelled) return
         setTitle(guestDoc.title)
         setContentHtml(guestDoc.contentHtml ?? guestDoc.content ?? STARTER_HTML)
-        const list = safeParseList(localStorage.getItem(DOCS_LIST_KEY))
         const next = [{ id: docId, title: guestDoc.title, updatedAt: Date.now() }, ...list.filter((item) => item.id !== docId)]
         localStorage.setItem(DOCS_LIST_KEY, JSON.stringify(next))
       } catch (error) {
@@ -234,9 +249,24 @@ export default function DocumentEditor({ docId }: { docId: string }) {
   };
 
   useEffect(() => {
+    if (lastDocIdForAutosaveRef.current !== docId) {
+      lastDocIdForAutosaveRef.current = docId
+      return
+    }
     scheduleSave(title, contentHtml);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [title, contentHtml]);
+  }, [docId, title, contentHtml]);
+
+  useEffect(() => {
+    if (saveTimer.current) {
+      window.clearTimeout(saveTimer.current)
+      saveTimer.current = null
+    }
+    setHasLoaded(false)
+    setSaveState("idle")
+    setTitle("Untitled Document")
+    setContentHtml("")
+  }, [docId])
 
   useEffect(() => {
     return () => {
@@ -285,45 +315,90 @@ export default function DocumentEditor({ docId }: { docId: string }) {
   };
 
   const handleDownloadPdf = async () => {
-    const printWindow = window.open("", "_blank", "noopener,noreferrer")
-    if (!printWindow) {
-      alert("Please allow popups to download PDF.")
-      return
+    try {
+      const html2canvas = (await import("html2canvas")).default
+      const { jsPDF } = await import("jspdf")
+      const titleText = title.trim().length > 0 ? title.trim() : "Untitled Document"
+      const wrapper = document.createElement("div")
+      wrapper.style.position = "fixed"
+      wrapper.style.left = "-100000px"
+      wrapper.style.top = "0"
+      wrapper.style.width = "840px"
+      wrapper.style.background = "#ffffff"
+      wrapper.style.color = "#0f172a"
+      wrapper.style.padding = "44px 56px"
+      wrapper.style.boxSizing = "border-box"
+      wrapper.style.fontFamily = "Inter, Arial, sans-serif"
+      wrapper.style.lineHeight = "1.6"
+
+      const safeTitle = titleText
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+
+      wrapper.innerHTML = `
+        <style>
+          .pdf-title { font-size: 38px; font-weight: 800; margin: 0 0 4px 0; line-height: 1.2; color: #020617; }
+          .pdf-meta { margin: 0 0 18px 0; color: #64748b; font-size: 12px; }
+          .pdf-content h1 { font-size: 30px; margin: 18px 0 8px; line-height: 1.25; color: #020617; }
+          .pdf-content h2 { font-size: 22px; margin: 16px 0 8px; line-height: 1.3; color: #020617; }
+          .pdf-content p { margin: 0 0 10px 0; }
+          .pdf-content ul, .pdf-content ol { margin: 10px 0 12px 24px; padding: 0; }
+          .pdf-content li { margin: 4px 0; }
+          .pdf-content hr { border: 0; border-top: 1px solid #cbd5e1; margin: 18px 0; }
+          .pdf-content code { background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; padding: 1px 6px; }
+          .pdf-content a { color: #1d4ed8; text-decoration: underline; }
+        </style>
+        <h1 class="pdf-title">${safeTitle}</h1>
+        <p class="pdf-meta">Generated ${new Date().toLocaleString()}</p>
+        <div class="pdf-content">${contentHtml}</div>
+      `
+
+      document.body.appendChild(wrapper)
+      let canvas: HTMLCanvasElement
+      try {
+        canvas = await html2canvas(wrapper, {
+          scale: 2,
+          backgroundColor: "#ffffff",
+          useCORS: true,
+        })
+      } finally {
+        if (document.body.contains(wrapper)) {
+          document.body.removeChild(wrapper)
+        }
+      }
+
+      const pdf = new jsPDF({ unit: "pt", format: "a4" })
+      const pageWidth = pdf.internal.pageSize.getWidth()
+      const pageHeight = pdf.internal.pageSize.getHeight()
+      const margin = 24
+      const renderWidth = pageWidth - margin * 2
+      const renderHeight = (canvas.height * renderWidth) / canvas.width
+      const pageContentHeight = pageHeight - margin * 2
+      const imageData = canvas.toDataURL("image/png")
+
+      let offsetY = 0
+      while (offsetY < renderHeight) {
+        pdf.addImage(imageData, "PNG", margin, margin - offsetY, renderWidth, renderHeight)
+        offsetY += pageContentHeight
+        if (offsetY < renderHeight) {
+          pdf.addPage()
+        }
+      }
+
+      const filenameBase = titleText
+        .replace(/[\\/:*?"<>|]/g, "")
+        .replace(/\s+/g, " ")
+        .trim()
+      pdf.save(`${filenameBase || "document"}.pdf`)
+    } catch (error) {
+      console.error("Failed to export PDF", error)
+      alert("Unable to download PDF right now.")
     }
+  }
 
-    const escapedTitle = (title.trim().length > 0 ? title.trim() : "Untitled Document")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-
-    printWindow.document.write(`<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <title>${escapedTitle}</title>
-    <style>
-      body { font-family: Inter, Arial, sans-serif; margin: 40px; color: #0f172a; line-height: 1.6; }
-      h1, h2, h3 { color: #020617; margin-bottom: 8px; }
-      h1 { font-size: 30px; margin-top: 0; }
-      h2 { font-size: 22px; margin-top: 22px; }
-      p { margin: 0 0 10px 0; }
-      ul, ol { margin: 10px 0 12px 22px; }
-      hr { border: none; border-top: 1px solid #cbd5e1; margin: 18px 0; }
-      code { background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; padding: 1px 6px; }
-      a { color: #1d4ed8; text-decoration: underline; }
-      .title { font-size: 38px; font-weight: 800; margin-bottom: 4px; }
-      .meta { color: #64748b; margin-bottom: 20px; font-size: 13px; }
-      @page { size: A4; margin: 18mm; }
-    </style>
-  </head>
-  <body>
-    <div class="title">${escapedTitle}</div>
-    <div class="meta">Generated ${new Date().toLocaleString()}</div>
-    <div>${contentHtml}</div>
-    <script>window.onload = () => { window.print(); window.close(); };</script>
-  </body>
-</html>`)
-    printWindow.document.close()
+  const keepSelectionOnMouseDown: React.MouseEventHandler<HTMLElement> = (event) => {
+    event.preventDefault()
   }
 
   if (!hasLoaded || status === "loading") {
@@ -426,27 +501,27 @@ export default function DocumentEditor({ docId }: { docId: string }) {
       </div>
 
       <div className={styles.bottomBar} role="toolbar" aria-label="Document tools">
-        <button className={styles.bottomButton} onClick={() => editorApi.current?.run({ type: "bold" })} title="Bold (Ctrl+B)">
+        <button className={styles.bottomButton} onMouseDown={keepSelectionOnMouseDown} onClick={() => editorApi.current?.run({ type: "bold" })} title="Bold (Ctrl+B)">
           <Bold size={16} />
         </button>
-        <button className={styles.bottomButton} onClick={() => editorApi.current?.run({ type: "italic" })} title="Italic (Ctrl+I)">
+        <button className={styles.bottomButton} onMouseDown={keepSelectionOnMouseDown} onClick={() => editorApi.current?.run({ type: "italic" })} title="Italic (Ctrl+I)">
           <Italic size={16} />
         </button>
         <div className={styles.bottomDivider} />
-        <button className={styles.bottomButton} onClick={() => editorApi.current?.run({ type: "h1" })} title="Heading 1">
+        <button className={styles.bottomButton} onMouseDown={keepSelectionOnMouseDown} onClick={() => editorApi.current?.run({ type: "h1" })} title="Heading 1">
           <Heading1 size={16} />
         </button>
-        <button className={styles.bottomButton} onClick={() => editorApi.current?.run({ type: "h2" })} title="Heading 2">
+        <button className={styles.bottomButton} onMouseDown={keepSelectionOnMouseDown} onClick={() => editorApi.current?.run({ type: "h2" })} title="Heading 2">
           <Heading2 size={16} />
         </button>
         <div className={styles.bottomDivider} />
-        <button className={styles.bottomButton} onClick={() => editorApi.current?.run({ type: "ul" })} title="Bulleted list">
+        <button className={styles.bottomButton} onMouseDown={keepSelectionOnMouseDown} onClick={() => editorApi.current?.run({ type: "ul" })} title="Bulleted list">
           <List size={16} />
         </button>
-        <button className={styles.bottomButton} onClick={() => editorApi.current?.run({ type: "ol" })} title="Numbered list">
+        <button className={styles.bottomButton} onMouseDown={keepSelectionOnMouseDown} onClick={() => editorApi.current?.run({ type: "ol" })} title="Numbered list">
           <ListOrdered size={16} />
         </button>
-        <button className={styles.bottomButton} onClick={() => editorApi.current?.run({ type: "divider" })} title="Divider">
+        <button className={styles.bottomButton} onMouseDown={keepSelectionOnMouseDown} onClick={() => editorApi.current?.run({ type: "divider" })} title="Divider">
           <SeparatorHorizontal size={16} />
         </button>
         <div className={styles.bottomDivider} />
@@ -498,11 +573,11 @@ export default function DocumentEditor({ docId }: { docId: string }) {
           />
         </label>
         <div className={styles.bottomSpacer} />
-        <button className={styles.bottomButton} onClick={handleDownloadPdf} title="Download as PDF">
+        <button className={styles.bottomButton} onMouseDown={keepSelectionOnMouseDown} onClick={handleDownloadPdf} title="Download as PDF">
           <Download size={16} />
           PDF
         </button>
-        <button className={styles.bottomButton} onClick={() => editorApi.current?.run({ type: "clear" })} title="Clear formatting">
+        <button className={styles.bottomButton} onMouseDown={keepSelectionOnMouseDown} onClick={() => editorApi.current?.run({ type: "clear" })} title="Clear formatting">
           <Eraser size={16} />
         </button>
       </div>

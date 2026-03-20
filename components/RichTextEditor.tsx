@@ -20,6 +20,30 @@ export type RichTextCommand =
 
 const runCommand = (command: RichTextCommand) => {
   if (typeof document === 'undefined') return;
+  try {
+    document.execCommand('styleWithCSS', false, 'true');
+  } catch {
+    // ignore
+  }
+
+  const applyInlineStyle = (property: string, value: string) => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+    const range = selection.getRangeAt(0);
+
+    if (range.collapsed) return;
+
+    const selected = range.extractContents();
+    const span = document.createElement('span');
+    span.style.setProperty(property, value);
+    span.appendChild(selected);
+    range.insertNode(span);
+
+    const nextRange = document.createRange();
+    nextRange.selectNodeContents(span);
+    selection.removeAllRanges();
+    selection.addRange(nextRange);
+  };
 
   switch (command.type) {
     case 'bold':
@@ -53,13 +77,13 @@ const runCommand = (command: RichTextCommand) => {
       document.execCommand('removeFormat');
       break;
     case 'textColor':
-      document.execCommand('foreColor', false, command.value);
+      applyInlineStyle('color', command.value);
       break;
     case 'highlightColor':
-      document.execCommand('hiliteColor', false, command.value);
+      applyInlineStyle('background-color', command.value);
       break;
     case 'fontFamily':
-      document.execCommand('fontName', false, command.value);
+      applyInlineStyle('font-family', command.value);
       break;
   }
 };
@@ -95,11 +119,44 @@ export default function RichTextEditor({
   onReady?: (api: { run: (command: RichTextCommand) => void; focus: () => void }) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const selectionRangeRef = useRef<Range | null>(null);
+
+  const saveSelection = () => {
+    const root = ref.current;
+    if (!root) return;
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+    const range = selection.getRangeAt(0);
+    const anchorNode = selection.anchorNode;
+    if (anchorNode && root.contains(anchorNode)) {
+      selectionRangeRef.current = range.cloneRange();
+    }
+  };
+
+  const restoreSelection = () => {
+    const root = ref.current;
+    const range = selectionRangeRef.current;
+    if (!root || !range) return;
+    const selection = window.getSelection();
+    if (!selection) return;
+    selection.removeAllRanges();
+    selection.addRange(range);
+  };
 
   const api = useMemo(() => {
     return {
-      run: (command: RichTextCommand) => runCommand(command),
-      focus: () => ref.current?.focus(),
+      run: (command: RichTextCommand) => {
+        const root = ref.current;
+        if (!root) return;
+        root.focus();
+        restoreSelection();
+        runCommand(command);
+        saveSelection();
+      },
+      focus: () => {
+        ref.current?.focus();
+        restoreSelection();
+      },
     };
   }, []);
 
@@ -133,6 +190,7 @@ export default function RichTextEditor({
       el.innerHTML = normalized;
     }
     onChangeHtml(normalized);
+    saveSelection();
   };
 
   const handlePaste: React.ClipboardEventHandler<HTMLDivElement> = (event) => {
@@ -156,6 +214,9 @@ export default function RichTextEditor({
       data-placeholder={placeholder ?? ''}
       onInput={handleInput}
       onPaste={handlePaste}
+      onKeyUp={saveSelection}
+      onMouseUp={saveSelection}
+      onBlur={saveSelection}
       spellCheck={false}
       role="textbox"
       aria-multiline="true"

@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono, Lobster_Two, Inter, Roboto, Open_Sans } from "next/font/google";
+import { Geist, Geist_Mono, Lobster_Two, Inter, Roboto, Open_Sans, Manrope, Space_Grotesk } from "next/font/google";
 import SessionProvider from "@/components/SessionProvider";
 import "./globals.css";
 
@@ -35,6 +35,16 @@ const openSans = Open_Sans({
   variable: "--font-open-sans",
 });
 
+const manrope = Manrope({
+  subsets: ["latin"],
+  variable: "--font-manrope",
+});
+
+const spaceGrotesk = Space_Grotesk({
+  subsets: ["latin"],
+  variable: "--font-space-grotesk",
+});
+
 export const metadata: Metadata = {
   title: "DiagramKit - Collaborative Whiteboard",
   description: "Create and share diagrams with ease",
@@ -60,7 +70,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} ${lobsterTwo.variable} ${inter.variable} ${roboto.variable} ${openSans.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${lobsterTwo.variable} ${inter.variable} ${roboto.variable} ${openSans.variable} ${manrope.variable} ${spaceGrotesk.variable} antialiased`}
       >
         <SessionProvider>{children}</SessionProvider>
       </body>

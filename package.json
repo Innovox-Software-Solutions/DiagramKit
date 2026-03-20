@@ -13,6 +13,8 @@
     "@auth/prisma-adapter": "^2.11.1",
     "@prisma/client": "^5.22.0",
     "@types/uuid": "^10.0.0",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1",
     "lucide-react": "^0.577.0",
     "mongodb": "^7.1.0",
     "next": "16.1.6",

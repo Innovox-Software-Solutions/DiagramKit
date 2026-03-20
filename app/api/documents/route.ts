@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import prisma from "@/lib/prisma"
 import { getClientId, rateLimit } from "@/lib/rate-limit"
+import { decodeDocumentHtml, encodeDocumentHtml } from "@/lib/document-serialization"
 
 const sanitizeHtml = (html: string) =>
   html
@@ -104,11 +105,12 @@ export async function POST(req: Request) {
       typeof body.contentHtml === "string"
         ? sanitizeHtml(body.contentHtml.slice(0, 300_000))
         : `<h2>Highlights</h2><ul><li>Write bullet points</li><li>Use <strong>bold</strong> for important words</li><li>Add headings with H1 / H2</li></ul>`
+    const contentHtmlEncoded = encodeDocumentHtml(contentHtml)
 
     const document = await prisma.document.create({
       data: {
         title,
-        contentHtml,
+        contentHtml: contentHtmlEncoded,
         userId: session.user.id as string,
       },
       select: { id: true, title: true, contentHtml: true, updatedAt: true },
@@ -118,7 +120,7 @@ export async function POST(req: Request) {
       {
         id: document.id,
         title: document.title,
-        contentHtml: document.contentHtml ?? "",
+        contentHtml: decodeDocumentHtml(document.contentHtml),
         updatedAt: document.updatedAt.getTime(),
       },
       { headers: { "Cache-Control": "no-store" } },

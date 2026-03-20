@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import prisma from "@/lib/prisma"
 import { getClientId, rateLimit } from "@/lib/rate-limit"
+import { decodeDocumentHtml, encodeDocumentHtml } from "@/lib/document-serialization"
 
 const isMongoObjectId = (value: string) => /^[a-f\d]{24}$/i.test(value)
 const sanitizeHtml = (html: string) =>
@@ -66,7 +67,7 @@ export async function GET(req: Request, { params }: Params) {
       {
         id: document.id,
         title: document.title,
-        contentHtml: document.contentHtml ?? "",
+        contentHtml: decodeDocumentHtml(document.contentHtml),
         updatedAt: document.updatedAt.getTime(),
       },
       { headers: { "Cache-Control": "no-store" } },
@@ -134,10 +135,11 @@ export async function PATCH(req: Request, { params }: Params) {
       typeof body.contentHtml === "string"
         ? sanitizeHtml(body.contentHtml.slice(0, 300_000))
         : ""
+    const nextContentHtmlEncoded = encodeDocumentHtml(nextContentHtml)
 
     const updated = await prisma.document.updateMany({
       where: { id: normalizedDocId, userId: session.user.id as string },
-      data: { title: nextTitle, contentHtml: nextContentHtml },
+      data: { title: nextTitle, contentHtml: nextContentHtmlEncoded },
     })
 
     if (updated.count === 0) {
