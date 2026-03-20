@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import React, { useMemo, useState } from "react";
 import { signIn, useSession } from "next-auth/react";
+import { compressToUTF16 } from "lz-string";
 import { UserMenu } from "@/components/UserMenu";
 import styles from "./documents.module.css";
 
@@ -16,6 +17,21 @@ type DocumentRecord = {
 const DOCS_THEME_KEY = "diagramkit.docs.theme.v1"
 const DOCS_GUEST_MODE_KEY = "diagramkit.docs.guestmode.v1"
 const DOCS_LIST_KEY = "diagramkit.documents.v1"
+const DOC_COMPRESSED_PREFIX = "lz:"
+
+const compactHtmlForStorage = (html: string) =>
+  html
+    .replace(/>\s+</g, "><")
+    .replace(/\sstyle=""/g, "")
+    .trim()
+
+const encodeLocalHtml = (html: string) => {
+  const compact = compactHtmlForStorage(html)
+  const compressed = compressToUTF16(compact)
+  if (!compressed) return compact
+  const packed = `${DOC_COMPRESSED_PREFIX}${compressed}`
+  return packed.length < compact.length ? packed : compact
+}
 
 const safeParse = (value: string | null): DocumentRecord[] => {
   if (!value) return []
@@ -150,7 +166,7 @@ export default function DocumentsHome() {
       docKey(id),
       JSON.stringify({
         title: record.title,
-        contentHtml: `<h2>Highlights</h2><ul><li>Write bullet points</li><li>Use <strong>bold</strong> for important words</li><li>Add headings with H1 / H2</li></ul>`,
+        contentHtml: encodeLocalHtml(`<h2>Highlights</h2><ul><li>Write bullet points</li><li>Use <strong>bold</strong> for important words</li><li>Add headings with H1 / H2</li></ul>`),
         updatedAt: now,
       }),
     )
@@ -208,7 +224,7 @@ export default function DocumentsHome() {
         </nav>
 
         <div className={styles.headerRight}>
-          <button className={styles.headerActionButton} onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}>
+          <button className={`${styles.headerActionButton} ${styles.hideOnMobile}`} onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}>
             {theme === "dark" ? "Light Mode" : "Dark Mode"}
           </button>
           {!session?.user?.id && (

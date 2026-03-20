@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { signIn, useSession } from "next-auth/react";
+import { compressToUTF16, decompressFromUTF16 } from "lz-string";
 import { UserMenu } from "@/components/UserMenu";
 import RichTextEditor, { type RichTextCommand } from "@/components/RichTextEditor";
 import { Bold, Italic, Underline, List, ListOrdered, Heading1, Heading2, SeparatorHorizontal, Eraser, Download, Table2 } from "lucide-react";
@@ -35,7 +36,29 @@ const DOCS_THEME_KEY = "diagramkit.docs.theme.v1"
 const DOCS_GUEST_MODE_KEY = "diagramkit.docs.guestmode.v1"
 const DOCS_LIST_KEY = "diagramkit.documents.v1"
 const docKey = (id: string) => `diagramkit.document.${id}.v1`
+const DOC_COMPRESSED_PREFIX = "lz:"
 const STARTER_HTML = `<h2>Highlights</h2><ul><li>Write bullet points</li><li>Use <strong>bold</strong> for important words</li><li>Add headings with H1 / H2</li></ul>`
+
+const compactHtmlForStorage = (html: string) =>
+  html
+    .replace(/>\s+</g, "><")
+    .replace(/\sstyle=""/g, "")
+    .trim()
+
+const encodeLocalHtml = (html: string) => {
+  const compact = compactHtmlForStorage(html)
+  const compressed = compressToUTF16(compact)
+  if (!compressed) return compact
+  const packed = `${DOC_COMPRESSED_PREFIX}${compressed}`
+  return packed.length < compact.length ? packed : compact
+}
+
+const decodeLocalHtml = (value: string | undefined) => {
+  if (!value) return ""
+  if (!value.startsWith(DOC_COMPRESSED_PREFIX)) return value
+  const decoded = decompressFromUTF16(value.slice(DOC_COMPRESSED_PREFIX.length))
+  return decoded ?? ""
+}
 
 const safeParseDoc = (value: string | null): StoredDocument => {
   if (!value) return { title: "Untitled Document", contentHtml: STARTER_HTML, updatedAt: Date.now() }
@@ -43,7 +66,7 @@ const safeParseDoc = (value: string | null): StoredDocument => {
     const parsed = JSON.parse(value) as Partial<StoredDocument>
     return {
       title: String(parsed.title ?? "Untitled Document"),
-      contentHtml: typeof parsed.contentHtml === "string" ? parsed.contentHtml : undefined,
+      contentHtml: typeof parsed.contentHtml === "string" ? decodeLocalHtml(parsed.contentHtml) : undefined,
       content: typeof parsed.content === "string" ? parsed.content : undefined,
       updatedAt: Number(parsed.updatedAt ?? Date.now()),
     }
@@ -127,7 +150,7 @@ export default function DocumentEditor({ docId }: { docId: string }) {
         docKey(docId),
         JSON.stringify({
           title: doc.title,
-          contentHtml: doc.contentHtml ?? STARTER_HTML,
+          contentHtml: encodeLocalHtml(doc.contentHtml ?? STARTER_HTML),
           updatedAt: now,
         } satisfies StoredDocument),
       )
@@ -237,7 +260,7 @@ export default function DocumentEditor({ docId }: { docId: string }) {
         docKey(docId),
         JSON.stringify({
           title: nextTitle,
-          contentHtml: nextContentHtml,
+          contentHtml: encodeLocalHtml(nextContentHtml),
           updatedAt,
         }),
       )
@@ -329,11 +352,12 @@ export default function DocumentEditor({ docId }: { docId: string }) {
       const { jsPDF } = await import("jspdf")
       const titleText = title.trim().length > 0 ? title.trim() : "Untitled Document"
       const wrapper = document.createElement("div")
-      wrapper.style.position = "fixed"
-      wrapper.style.left = "0"
+      wrapper.style.position = "absolute"
+      wrapper.style.left = "-100000px"
       wrapper.style.top = "0"
-      wrapper.style.zIndex = "-1"
-      wrapper.style.opacity = "0"
+      wrapper.style.zIndex = "0"
+      wrapper.style.opacity = "1"
+      wrapper.style.visibility = "visible"
       wrapper.style.pointerEvents = "none"
       wrapper.style.width = "840px"
       wrapper.style.background = "#ffffff"
@@ -368,18 +392,63 @@ export default function DocumentEditor({ docId }: { docId: string }) {
 
       document.body.appendChild(wrapper)
       try {
+        if ("fonts" in document) {
+          await (document as Document & { fonts: { ready: Promise<unknown> } }).fonts.ready
+        }
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+
         const filenameBase = titleText
           .replace(/[\\/:*?"<>|]/g, "")
           .replace(/\s+/g, " ")
           .trim()
 
-        const canvas = await html2canvas(wrapper, {
+        const isMostlyBlank = (canvas: HTMLCanvasElement) => {
+          const ctx = canvas.getContext("2d")
+          if (!ctx) return true
+          const { width, height } = canvas
+          const step = Math.max(1, Math.floor(Math.min(width, height) / 80))
+          const sample = ctx.getImageData(0, 0, width, height).data
+          let nonWhite = 0
+          let total = 0
+          for (let y = 0; y < height; y += step) {
+            for (let x = 0; x < width; x += step) {
+              const i = (y * width + x) * 4
+              const r = sample[i]
+              const g = sample[i + 1]
+              const b = sample[i + 2]
+              const a = sample[i + 3]
+              if (a > 10 && (r < 245 || g < 245 || b < 245)) {
+                nonWhite += 1
+              }
+              total += 1
+            }
+          }
+          return total === 0 || nonWhite / total < 0.003
+        }
+
+        let canvas = await html2canvas(wrapper, {
           scale: 2,
           backgroundColor: "#ffffff",
           useCORS: true,
+          foreignObjectRendering: false,
           windowWidth: wrapper.scrollWidth,
           windowHeight: wrapper.scrollHeight,
         })
+
+        if (isMostlyBlank(canvas)) {
+          canvas = await html2canvas(wrapper, {
+            scale: 2,
+            backgroundColor: "#ffffff",
+            useCORS: true,
+            foreignObjectRendering: true,
+            windowWidth: wrapper.scrollWidth,
+            windowHeight: wrapper.scrollHeight,
+          })
+        }
+
+        if (isMostlyBlank(canvas)) {
+          throw new Error("Export render returned blank canvas")
+        }
 
         const pdf = new jsPDF({ unit: "pt", format: "a4" })
         const pageWidth = pdf.internal.pageSize.getWidth()
@@ -501,18 +570,78 @@ export default function DocumentEditor({ docId }: { docId: string }) {
     syncEditorHtml()
   }
 
-  const resizeCell = (axis: "width" | "height", deltaPx: number) => {
-    const cell = getActiveCell()
+  const getTableCellForResize = (table: HTMLTableElement): HTMLTableCellElement | null => {
+    const active = getActiveCell()
+    if (active && table.contains(active)) return active
+
+    const firstBodyRow = table.tBodies[0]?.rows[0]
+    if (firstBodyRow?.cells[0]) return firstBodyRow.cells[0] as HTMLTableCellElement
+
+    const firstHeadRow = table.tHead?.rows[0]
+    if (firstHeadRow?.cells[0]) return firstHeadRow.cells[0] as HTMLTableCellElement
+
+    return null
+  }
+
+  const resizeTableCellFromHover = (axis: "width" | "height", deltaPx: number) => {
+    const table = getTableFromHoverUi()
+    if (!table) return
+    const cell = getTableCellForResize(table)
     if (!cell) return
+
     const current = axis === "width" ? cell.getBoundingClientRect().width : cell.getBoundingClientRect().height
-    const next = Math.max(axis === "width" ? 72 : 30, Math.min(axis === "width" ? 520 : 260, current + deltaPx))
+    const next = Math.max(axis === "width" ? 72 : 30, Math.min(axis === "width" ? 620 : 260, current + deltaPx))
     cell.style.setProperty(axis, `${Math.round(next)}px`)
-    const table = cell.closest("table")
-    if (table) {
-      table.style.tableLayout = "fixed"
-      table.style.width = table.style.width || "100%"
+    table.style.tableLayout = "fixed"
+    table.style.width = table.style.width || "100%"
+    syncEditorHtml()
+    showHoverForTable(table)
+  }
+
+  const removeTableFromHover = () => {
+    const table = getTableFromHoverUi()
+    if (!table) return
+    table.remove()
+    syncEditorHtml()
+    setTableHoverUi((prev) => ({ ...prev, visible: false }))
+  }
+
+  const toggleHeaderFromHover = () => {
+    const table = getTableFromHoverUi()
+    if (!table) return
+
+    const tbody = table.tBodies[0] ?? table.createTBody()
+    if (table.tHead) {
+      const headRows = Array.from(table.tHead.rows)
+      headRows.reverse().forEach((row) => {
+        const newRow = tbody.insertRow(0)
+        Array.from(row.cells).forEach((cell) => {
+          const td = document.createElement("td")
+          td.innerHTML = cell.innerHTML || "&nbsp;"
+          newRow.appendChild(td)
+        })
+      })
+      table.deleteTHead()
+    } else {
+      const sourceRow = tbody.rows[0]
+      if (!sourceRow) return
+      const thead = table.createTHead()
+      const headRow = thead.insertRow(0)
+      Array.from(sourceRow.cells).forEach((cell) => {
+        const th = document.createElement("th")
+        th.innerHTML = cell.innerHTML || "Header"
+        headRow.appendChild(th)
+      })
+      tbody.deleteRow(0)
+      if (tbody.rows.length === 0) {
+        const row = tbody.insertRow(0)
+        for (let i = 0; i < headRow.cells.length; i += 1) {
+          row.insertCell(i).innerHTML = "&nbsp;"
+        }
+      }
     }
     syncEditorHtml()
+    showHoverForTable(table)
   }
 
   const getTableFromHoverUi = (): HTMLTableElement | null => {
@@ -553,25 +682,28 @@ export default function DocumentEditor({ docId }: { docId: string }) {
     showHoverForTable(table)
   }
 
-  const _deprecatedKeep = () => {
-    // keep function positions stable after simplification
-    return undefined
-  }
-
-  const oldAddTableColumn = () => {
-    const table = getActiveTable()
+  const addTableRowFromHover = () => {
+    const table = getTableFromHoverUi()
     if (!table) return
-    Array.from(table.rows).forEach((row, rowIndex) => {
-      if (row.parentElement?.tagName === "THEAD" || (rowIndex === 0 && !table.tHead)) {
-        row.insertCell(-1).outerHTML = "<th>Header</th>"
-      } else {
-        row.insertCell(-1).innerHTML = "&nbsp;"
-      }
-    })
+    const cols = Math.max(1, table.rows[0]?.cells.length ?? 1)
+    const tbody = table.tBodies[0] ?? table.createTBody()
+    const row = tbody.insertRow(-1)
+    for (let i = 0; i < cols; i += 1) {
+      row.insertCell(-1).innerHTML = "&nbsp;"
+    }
     syncEditorHtml()
+    showHoverForTable(table)
   }
 
-  const oldRemoveTableColumn = () => _deprecatedKeep()
+  const removeTableRowFromHover = () => {
+    const table = getTableFromHoverUi()
+    if (!table) return
+    const tbody = table.tBodies[0]
+    if (!tbody || tbody.rows.length <= 1) return
+    tbody.deleteRow(tbody.rows.length - 1)
+    syncEditorHtml()
+    showHoverForTable(table)
+  }
 
   useEffect(() => {
     const updateSelectionUi = () => {
@@ -684,12 +816,12 @@ export default function DocumentEditor({ docId }: { docId: string }) {
         </div>
 
         <div className={styles.headerRight}>
-          <button className={styles.headerActionButton} onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}>
+          <button className={`${styles.headerActionButton} ${styles.hideOnMobile}`} onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}>
             {theme === "dark" ? "Light Mode" : "Dark Mode"}
           </button>
           {session?.user?.id ? (
             <>
-              <button className={styles.headerActionButton} type="button" title="Current save status">
+              <button className={`${styles.headerActionButton} ${styles.hideOnTablet}`} type="button" title="Current save status">
                 {saveState === "saving" ? "Saving…" : saveState === "error" ? "Save Failed" : "Saved"}
               </button>
               <button className={styles.headerActionButton} type="button" onClick={() => void persist(title, contentHtml)} title="Save now">
@@ -760,26 +892,38 @@ export default function DocumentEditor({ docId }: { docId: string }) {
             </div>
           )}
           {tableHoverUi.visible && (
-            <>
-              <button
-                className={styles.tableHoverAdd}
-                style={{ left: tableHoverUi.rightX, top: tableHoverUi.y }}
-                onMouseDown={keepSelectionOnMouseDown}
-                onClick={addTableColumnFromHover}
-                title="Add column on right"
-              >
-                +
+            <div className={styles.tableHoverPanel} style={{ left: tableHoverUi.rightX, top: tableHoverUi.y }}>
+              <button className={styles.tableHoverTiny} onMouseDown={keepSelectionOnMouseDown} onClick={addTableColumnFromHover} title="Add column">
+                +Col
               </button>
-              <button
-                className={styles.tableHoverRemove}
-                style={{ left: tableHoverUi.leftX, top: tableHoverUi.y }}
-                onMouseDown={keepSelectionOnMouseDown}
-                onClick={removeTableColumnFromHover}
-                title="Remove last column"
-              >
-                -
+              <button className={styles.tableHoverTiny} onMouseDown={keepSelectionOnMouseDown} onClick={removeTableColumnFromHover} title="Remove column">
+                -Col
               </button>
-            </>
+              <button className={styles.tableHoverTiny} onMouseDown={keepSelectionOnMouseDown} onClick={addTableRowFromHover} title="Add row">
+                +Row
+              </button>
+              <button className={styles.tableHoverTiny} onMouseDown={keepSelectionOnMouseDown} onClick={removeTableRowFromHover} title="Remove row">
+                -Row
+              </button>
+              <button className={styles.tableHoverTiny} onMouseDown={keepSelectionOnMouseDown} onClick={() => resizeTableCellFromHover("width", -24)} title="Decrease cell width">
+                W-
+              </button>
+              <button className={styles.tableHoverTiny} onMouseDown={keepSelectionOnMouseDown} onClick={() => resizeTableCellFromHover("width", 24)} title="Increase cell width">
+                W+
+              </button>
+              <button className={styles.tableHoverTiny} onMouseDown={keepSelectionOnMouseDown} onClick={() => resizeTableCellFromHover("height", -12)} title="Decrease cell height">
+                H-
+              </button>
+              <button className={styles.tableHoverTiny} onMouseDown={keepSelectionOnMouseDown} onClick={() => resizeTableCellFromHover("height", 12)} title="Increase cell height">
+                H+
+              </button>
+              <button className={styles.tableHoverTiny} onMouseDown={keepSelectionOnMouseDown} onClick={toggleHeaderFromHover} title="Toggle header row">
+                Header
+              </button>
+              <button className={styles.tableHoverTinyDanger} onMouseDown={keepSelectionOnMouseDown} onClick={removeTableFromHover} title="Delete table">
+                Delete
+              </button>
+            </div>
           )}
           <div className={styles.docTitle}>{title.trim().length ? title : "Untitled Document"}</div>
           <div className={styles.docHint}>Type your notes here — use the toolbar for formatting.</div>
@@ -829,7 +973,13 @@ export default function DocumentEditor({ docId }: { docId: string }) {
           className={styles.bottomButton}
           onMouseDown={keepSelectionOnMouseDown}
           onClick={() => {
-            editorApi.current?.run({ type: "table", rows: 3, cols: 3, header: true })
+            const rowsRaw = window.prompt("How many rows?", "3")
+            if (rowsRaw === null) return
+            const colsRaw = window.prompt("How many columns?", "3")
+            if (colsRaw === null) return
+            const rows = Math.max(1, Math.min(20, Number(rowsRaw) || 3))
+            const cols = Math.max(1, Math.min(10, Number(colsRaw) || 3))
+            editorApi.current?.run({ type: "table", rows, cols, header: true })
           }}
           title="Insert table"
         >

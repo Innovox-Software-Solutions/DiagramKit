@@ -2,9 +2,14 @@ import { deflateRawSync, inflateRawSync } from "node:zlib"
 
 const GZIP_PREFIX = "gz:"
 const PLAIN_PREFIX = "pl:"
+const compactHtmlForStorage = (html: string) =>
+  html
+    .replace(/>\s+</g, "><")
+    .replace(/\sstyle=""/g, "")
+    .trim()
 
 export function encodeDocumentHtml(html: string): string {
-  const input = html ?? ""
+  const input = compactHtmlForStorage(html ?? "")
   if (!input.length) return PLAIN_PREFIX
 
   try {
@@ -37,4 +42,3 @@ export function decodeDocumentHtml(value: string | null | undefined): string {
   // Backward compatibility for older rows stored as raw HTML.
   return value
 }
-

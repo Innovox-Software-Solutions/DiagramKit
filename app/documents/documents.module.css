@@ -29,6 +29,9 @@
   --doc-code-border: rgba(226, 232, 240, 0.12);
   --doc-link: #93c5fd;
   --editor-placeholder-color: rgba(226, 232, 240, 0.55);
+  --doc-paper-bg: linear-gradient(180deg, rgba(8, 15, 36, 0.45), rgba(8, 15, 36, 0.2));
+  --doc-paper-border: rgba(148, 163, 184, 0.18);
+  --doc-paper-shadow: 0 18px 60px rgba(0, 0, 0, 0.28);
   --mode-tabs-bg: rgba(148, 163, 184, 0.10);
   --mode-tab-active: rgba(59, 130, 246, 0.22);
   --toolbar-divider: rgba(148, 163, 184, 0.22);
@@ -75,6 +78,9 @@
   --doc-code-border: rgba(148, 163, 184, 0.38);
   --doc-link: #1d4ed8;
   --editor-placeholder-color: rgba(71, 85, 105, 0.58);
+  --doc-paper-bg: rgba(255, 255, 255, 0.88);
+  --doc-paper-border: rgba(100, 116, 139, 0.24);
+  --doc-paper-shadow: 0 12px 36px rgba(15, 23, 42, 0.12);
   --mode-tabs-bg: rgba(148, 163, 184, 0.22);
   --mode-tab-active: rgba(37, 99, 235, 0.16);
   --toolbar-divider: rgba(100, 116, 139, 0.30);
@@ -107,6 +113,8 @@
   --menu-dropdown-border: var(--border-soft);
   --menu-dropdown-fg: var(--doc-text);
   --menu-dropdown-muted: var(--text-secondary);
+  backdrop-filter: blur(8px);
+  overflow: hidden;
 }
 
 .headerLeft {
@@ -124,6 +132,14 @@
   flex-shrink: 0;
   flex: 1;
   justify-content: flex-end;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.headerRight::-webkit-scrollbar {
+  display: none;
 }
 
 .heading {
@@ -313,7 +329,7 @@
 .docCanvas {
   flex: 1;
   overflow: auto;
-  padding: 22px 16px 32px;
+  padding: 26px 16px 40px;
   display: flex;
   justify-content: center;
   scrollbar-color: var(--scroll-thumb-hover) var(--scroll-track);
@@ -338,13 +354,13 @@
 }
 
 .docPaper {
-  width: min(1080px, 100%);
+  width: min(1020px, 100%);
   position: relative;
-  background: transparent;
-  border: none;
-  border-radius: 0;
-  box-shadow: none;
-  padding: 28px 20px 120px;
+  background: var(--doc-paper-bg);
+  border: 1px solid var(--doc-paper-border);
+  border-radius: 16px;
+  box-shadow: var(--doc-paper-shadow);
+  padding: 28px 28px 120px;
   backdrop-filter: none;
 }
 
@@ -535,6 +551,85 @@
   cursor: pointer;
 }
 
+.tableHoverAdd,
+.tableHoverRemove {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  z-index: 141;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid var(--border-soft);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+}
+
+.tableHoverAdd {
+  background: var(--surface-accent);
+  color: #ffffff;
+}
+
+.tableHoverRemove {
+  background: var(--surface-soft);
+  color: var(--doc-text);
+  opacity: 0.7;
+}
+
+.tableHoverRemove:hover {
+  opacity: 1;
+}
+
+.tableHoverPanel {
+  position: absolute;
+  transform: translate(0, -50%);
+  z-index: 141;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-strong);
+  box-shadow: var(--shadow);
+}
+
+.tableHoverTiny {
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-soft);
+  color: var(--doc-text);
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.tableHoverTiny:hover {
+  background: var(--surface-soft-hover);
+}
+
+.tableHoverTinyDanger {
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 1px solid var(--danger-border);
+  background: var(--surface-soft);
+  color: var(--text-danger);
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.tableHoverTinyDanger:hover {
+  background: var(--danger-hover);
+}
+
 .bottomBar {
   position: fixed;
   left: 50%;
@@ -544,13 +639,13 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px;
+  padding: 9px;
   border-radius: 16px;
   border: 1px solid var(--border-soft);
   background: var(--surface-strong);
   backdrop-filter: blur(14px);
   box-shadow: var(--shadow);
-  max-width: calc(100vw - 24px);
+  max-width: min(1220px, calc(100vw - 24px));
   overflow-x: auto;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
@@ -564,7 +659,7 @@
   border: 1px solid var(--border-soft);
   background: var(--surface-soft);
   color: var(--doc-text);
-  border-radius: 12px;
+  border-radius: 10px;
   padding: 10px 12px;
   font-size: 12px;
   font-weight: 900;
@@ -602,6 +697,9 @@
   font-weight: 700;
   padding: 8px 10px;
   outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
   min-width: 120px;
 }
 
@@ -629,6 +727,66 @@
 .bottomSpacer {
   flex: 1;
   min-width: 6px;
+}
+
+.hideOnTablet {
+  display: inline-flex;
+}
+
+.hideOnMobile {
+  display: inline-flex;
+}
+
+@media (max-width: 1160px) {
+  .header {
+    padding: 0 10px;
+    gap: 8px;
+  }
+
+  .headerLeft,
+  .headerRight {
+    gap: 8px;
+  }
+
+  .titleInput {
+    width: min(420px, 42vw);
+  }
+
+  .headerActionButton,
+  .headerPrimaryButton,
+  .secondaryButton,
+  .primaryButton {
+    padding: 7px 10px;
+    font-size: 11px;
+  }
+
+  .modeTabs {
+    display: none;
+  }
+}
+
+@media (max-width: 980px) {
+  .hideOnTablet {
+    display: none;
+  }
+
+  .docCanvas {
+    padding: 16px 10px 34px;
+  }
+
+  .docPaper {
+    padding: 18px 14px 116px;
+    border-radius: 12px;
+  }
+
+  .docTitle {
+    font-size: 28px;
+  }
+
+  .docHint {
+    font-size: 13px;
+    margin-bottom: 12px;
+  }
 }
 
 @media (max-width: 860px) {
@@ -709,6 +867,30 @@
     padding: 0 7px;
     font-size: 10px;
   }
+
+  .tableHoverAdd,
+  .tableHoverRemove {
+    width: 24px;
+    height: 24px;
+    font-size: 14px;
+  }
+
+  .tableHoverPanel {
+    gap: 4px;
+    padding: 5px;
+  }
+
+  .tableHoverTiny {
+    height: 24px;
+    padding: 0 7px;
+    font-size: 10px;
+  }
+
+  .tableHoverTinyDanger {
+    height: 24px;
+    padding: 0 7px;
+    font-size: 10px;
+  }
 }
 
 @media (max-width: 860px) {
@@ -722,6 +904,50 @@
 
   .modeTabs {
     display: none;
+  }
+
+  .hideOnMobile {
+    display: none;
+  }
+
+  .titleInput {
+    width: min(300px, 52vw);
+    min-width: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .container {
+    --app-topbar-height: 52px;
+  }
+
+  .header {
+    padding: 0 8px;
+    gap: 6px;
+  }
+
+  .headerLeft,
+  .headerRight {
+    gap: 6px;
+  }
+
+  .docCanvas {
+    padding: 10px 6px 30px;
+  }
+
+  .docPaper {
+    padding: 14px 10px 106px;
+    border-radius: 10px;
+  }
+
+  .docTitle {
+    font-size: 24px;
+  }
+
+  .titleInput {
+    width: min(240px, 50vw);
+    font-size: 12px;
+    padding: 7px 8px;
   }
 }
 
