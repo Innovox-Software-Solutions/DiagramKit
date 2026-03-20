@@ -29,7 +29,6 @@ type ShareInfo = {
   isShared: boolean
   views: number
   lockEnabled: boolean
-  oneTimeView: boolean
 }
 
 type StoredDocument = {
@@ -43,6 +42,7 @@ const DOCS_THEME_KEY = "diagramkit.docs.theme.v1"
 const DOCS_GUEST_MODE_KEY = "diagramkit.docs.guestmode.v1"
 const DOCS_LIST_KEY = "diagramkit.documents.v1"
 const docKey = (id: string) => `diagramkit.document.${id}.v1`
+const guestShareKey = (id: string) => `diagramkit.document.${id}.share.v1`
 const DOC_COMPRESSED_PREFIX = "lz:"
 const STARTER_HTML = `<h2>Highlights</h2><ul><li>Write bullet points</li><li>Use <strong>bold</strong> for important words</li><li>Add headings with H1 / H2</li></ul>`
 
@@ -124,7 +124,13 @@ export default function DocumentEditor({ docId }: { docId: string }) {
     leftX: 0,
     y: 0,
   });
-  const [shareInfo, setShareInfo] = useState<ShareInfo>({ isShared: false, views: 0, lockEnabled: false, oneTimeView: false })
+  const [shareInfo, setShareInfo] = useState<ShareInfo>({ isShared: false, views: 0, lockEnabled: false })
+  const [shareModalOpen, setShareModalOpen] = useState(false)
+  const [shareBusy, setShareBusy] = useState(false)
+  const [shareUrl, setShareUrl] = useState("")
+  const [shareError, setShareError] = useState("")
+  const [showPasscodeForm, setShowPasscodeForm] = useState(false)
+  const [newPasscode, setNewPasscode] = useState("")
 
   const saveTimer = useRef<number | null>(null);
   const editorApi = useRef<null | { run: (command: RichTextCommand) => void; focus: () => void }>(null);
@@ -338,66 +344,88 @@ export default function DocumentEditor({ docId }: { docId: string }) {
     router.push("/documents");
   };
 
+  const upsertShare = async (passcode = "") => {
+    const endpoint = session?.user?.id ? "/api/share-document" : "/api/share-guest-document"
+    const guestShareMetaRaw = localStorage.getItem(guestShareKey(docId))
+    const guestShareMeta = guestShareMetaRaw ? (JSON.parse(guestShareMetaRaw) as { shareId?: string }) : null
+    const payload = session?.user?.id
+      ? {
+          docId,
+          lockEnabled: passcode.trim().length > 0,
+          passcode: passcode.trim(),
+        }
+      : {
+          title,
+          contentHtml,
+          shareId: guestShareMeta?.shareId ?? "",
+          lockEnabled: passcode.trim().length > 0,
+          passcode: passcode.trim(),
+        }
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(payload),
+    })
+    const data = (await res.json()) as { error?: string; shareUrl?: string; shareId?: string; views?: number; lockEnabled?: boolean }
+    if (!res.ok || !data.shareUrl) {
+      throw new Error(data.error ?? "Unable to create share link")
+    }
+    if (!session?.user?.id && data.shareId) {
+      localStorage.setItem(guestShareKey(docId), JSON.stringify({ shareId: data.shareId }))
+    }
+    setShareInfo({
+      isShared: true,
+      views: Number(data.views ?? 0),
+      lockEnabled: data.lockEnabled === true,
+    })
+    setShareUrl(data.shareUrl)
+  }
+
   const handleShare = async () => {
     if (!session?.user?.id && !guestMode) {
       await signIn("google", { callbackUrl: `/documents/${docId}` })
       return
     }
     await persist(title, contentHtml)
-
-    const lockEnabled = window.confirm("Lock this share link with passcode?")
-    const passcode = lockEnabled ? window.prompt("Set passcode for this shared link (min 4 chars)", "") ?? "" : ""
-    if (lockEnabled && passcode.trim().length < 4) {
-      alert("Passcode must be at least 4 characters.")
-      return
-    }
-    const oneTimeView = window.confirm("Allow one-time view only per browser/device?")
-
-    const endpoint = session?.user?.id ? "/api/share-document" : "/api/share-guest-document"
-    const payload = session?.user?.id
-      ? {
-          docId,
-          lockEnabled,
-          passcode: passcode.trim(),
-          oneTimeView,
-        }
-      : {
-          title,
-          contentHtml,
-          lockEnabled,
-          passcode: passcode.trim(),
-          oneTimeView,
-        }
-
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify(payload),
-    })
-
-    const data = (await res.json()) as { error?: string; shareUrl?: string; views?: number; lockEnabled?: boolean; oneTimeView?: boolean }
-    if (!res.ok || !data.shareUrl) {
-      alert(data.error ?? "Unable to create share link")
-      return
-    }
-
-    setShareInfo({
-      isShared: true,
-      views: Number(data.views ?? 0),
-      lockEnabled: data.lockEnabled === true,
-      oneTimeView: data.oneTimeView === true,
-    })
-
+    setShareModalOpen(true)
+    setShareError("")
+    setShareBusy(true)
     try {
-      await navigator.clipboard.writeText(data.shareUrl)
-      alert("View-only share link copied")
-    } catch {
-      alert(data.shareUrl)
+      await upsertShare("")
+    } catch (error) {
+      setShareError(error instanceof Error ? error.message : "Unable to create share link")
+    } finally {
+      setShareBusy(false)
     }
   };
+
+  const handleCopyShareUrl = async () => {
+    if (!shareUrl) return
+    try {
+      await navigator.clipboard.writeText(shareUrl)
+    } catch {
+      // ignore
+    }
+  }
+
+  const handleSetPasscode = async () => {
+    const trimmed = newPasscode.trim()
+    if (trimmed.length < 4) {
+      setShareError("Passcode must be at least 4 characters.")
+      return
+    }
+    setShareError("")
+    setShareBusy(true)
+    try {
+      await upsertShare(trimmed)
+      setShowPasscodeForm(false)
+      setNewPasscode("")
+    } catch (error) {
+      setShareError(error instanceof Error ? error.message : "Unable to set passcode")
+    } finally {
+      setShareBusy(false)
+    }
+  }
 
   useEffect(() => {
     if (!session?.user?.id) return

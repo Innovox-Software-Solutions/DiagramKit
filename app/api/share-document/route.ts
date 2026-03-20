@@ -56,7 +56,7 @@ export async function POST(req: Request) {
       )
     }
 
-    const body = data as { docId?: unknown; passcode?: unknown; oneTimeView?: unknown; lockEnabled?: unknown }
+    const body = data as { docId?: unknown; passcode?: unknown; lockEnabled?: unknown }
     const docId = typeof body.docId === "string" ? body.docId.trim() : ""
     if (!isMongoObjectId(docId)) {
       return NextResponse.json(
@@ -66,13 +66,17 @@ export async function POST(req: Request) {
     }
 
     const passcode = typeof body.passcode === "string" ? body.passcode.trim() : ""
-    const lockEnabled = body.lockEnabled === true || passcode.length > 0
-    const oneTimeView = body.oneTimeView === true
-    const sharePassHash = lockEnabled && passcode ? hashSharePasscode(passcode) : null
+    const lockEnabledRequested = body.lockEnabled === true || passcode.length > 0
+    if (lockEnabledRequested && passcode.length > 0 && passcode.length < 4) {
+      return NextResponse.json(
+        { error: "Passcode must be at least 4 characters." },
+        { status: 400, headers: { "Cache-Control": "no-store" } },
+      )
+    }
 
     const existing = await prisma.document.findFirst({
       where: { id: docId, userId: session.user.id as string },
-      select: { id: true },
+      select: { id: true, shareId: true, sharePassHash: true, shareLocked: true, shareViewCount: true },
     })
 
     if (!existing) {
@@ -82,18 +86,14 @@ export async function POST(req: Request) {
       )
     }
 
-    const nextShareId = makeShareId()
+    const nextShareId = existing.shareId?.trim() || makeShareId()
+    const alreadyLocked = !!existing.sharePassHash
+    const shareLocked = alreadyLocked ? true : lockEnabledRequested
+    const sharePassHash = alreadyLocked ? existing.sharePassHash : (shareLocked && passcode ? hashSharePasscode(passcode) : null)
     const updated = await prisma.document.update({
       where: { id: existing.id },
-      data: {
-        isPublic: true,
-        shareId: nextShareId,
-        shareLocked: lockEnabled,
-        sharePassHash,
-        shareOneTime: oneTimeView,
-        shareViewCount: 0,
-      },
-      select: { id: true, shareId: true, shareLocked: true, shareOneTime: true },
+      data: { isPublic: true, shareId: nextShareId, shareLocked, sharePassHash, shareOneTime: false },
+      select: { id: true, shareId: true, shareLocked: true, shareViewCount: true },
     })
 
     const baseUrl = getBaseUrl(req)
@@ -106,8 +106,7 @@ export async function POST(req: Request) {
         shareId: updated.shareId,
         shareUrl,
         lockEnabled: !!updated.shareLocked,
-        oneTimeView: !!updated.shareOneTime,
-        views: 0,
+        views: Number(updated.shareViewCount ?? 0),
       },
       { headers: { "Cache-Control": "no-store" } },
     )
@@ -165,7 +164,7 @@ export async function GET(req: Request) {
         isShared: !!document.isPublic && !!document.shareId,
         shareId: document.shareId,
         lockEnabled: !!document.shareLocked,
-        oneTimeView: !!document.shareOneTime,
+        oneTimeView: false,
         views: Number(document.shareViewCount ?? 0),
       },
       { headers: { "Cache-Control": "no-store" } },
