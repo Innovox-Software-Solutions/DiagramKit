@@ -768,6 +768,96 @@
   animation: exportSpin 0.8s linear infinite;
 }
 
+.shareOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 210;
+  background: rgba(2, 6, 23, 0.5);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+}
+
+.shareCard {
+  width: min(560px, 96vw);
+  border-radius: 14px;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-strong);
+  box-shadow: var(--shadow);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.shareTitle {
+  font-size: 16px;
+  font-weight: 900;
+  color: var(--text-primary);
+}
+
+.shareHint {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.shareLinkRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.shareLinkInput {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: var(--surface-soft);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sharePasscodeRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sharePasscodeInput {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: var(--surface-soft);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.shareLockedNote {
+  font-size: 12px;
+  color: var(--text-secondary);
+  border: 1px dashed var(--border-soft);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+.shareError {
+  color: var(--text-danger);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.shareActions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .exportText {
   font-size: 15px;
   font-weight: 800;
@@ -1024,6 +1114,12 @@
     width: min(240px, 50vw);
     font-size: 12px;
     padding: 7px 8px;
+  }
+
+  .shareLinkRow,
+  .sharePasscodeRow {
+    flex-direction: column;
+    align-items: stretch;
   }
 }
 

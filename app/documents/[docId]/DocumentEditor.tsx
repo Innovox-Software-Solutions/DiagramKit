@@ -347,7 +347,14 @@ export default function DocumentEditor({ docId }: { docId: string }) {
   const upsertShare = async (passcode = "") => {
     const endpoint = session?.user?.id ? "/api/share-document" : "/api/share-guest-document"
     const guestShareMetaRaw = localStorage.getItem(guestShareKey(docId))
-    const guestShareMeta = guestShareMetaRaw ? (JSON.parse(guestShareMetaRaw) as { shareId?: string }) : null
+    let guestShareMeta: { shareId?: string } | null = null
+    if (guestShareMetaRaw) {
+      try {
+        guestShareMeta = JSON.parse(guestShareMetaRaw) as { shareId?: string }
+      } catch {
+        guestShareMeta = null
+      }
+    }
     const payload = session?.user?.id
       ? {
           docId,
@@ -444,7 +451,6 @@ export default function DocumentEditor({ docId }: { docId: string }) {
           isShared: data.isShared === true,
           views: Number(data.views ?? 0),
           lockEnabled: data.lockEnabled === true,
-          oneTimeView: data.oneTimeView === true,
         })
       } catch {
         // ignore
@@ -1093,6 +1099,51 @@ export default function DocumentEditor({ docId }: { docId: string }) {
           </div>
         </div>
       )}
+      {shareModalOpen && (
+        <div className={styles.shareOverlay} role="dialog" aria-modal="true" aria-label="Share document">
+          <div className={styles.shareCard}>
+            <div className={styles.shareTitle}>Share Link</div>
+            <div className={styles.shareHint}>Anyone with this link can view. Link is shown as plain text.</div>
+            <div className={styles.shareLinkRow}>
+              <input className={styles.shareLinkInput} value={shareUrl} readOnly aria-label="Share URL" />
+              <button className={styles.headerPrimaryButton} type="button" onClick={handleCopyShareUrl} disabled={!shareUrl || shareBusy}>
+                Copy
+              </button>
+            </div>
+            {shareInfo.lockEnabled ? (
+              <div className={styles.shareLockedNote}>Passcode enabled. It cannot be removed from this screen.</div>
+            ) : (
+              <>
+                {!showPasscodeForm && (
+                  <button className={styles.headerActionButton} type="button" onClick={() => setShowPasscodeForm(true)} disabled={shareBusy}>
+                    Set Passcode
+                  </button>
+                )}
+                {showPasscodeForm && (
+                  <div className={styles.sharePasscodeRow}>
+                    <input
+                      className={styles.sharePasscodeInput}
+                      type="password"
+                      placeholder="Enter passcode (min 4 chars)"
+                      value={newPasscode}
+                      onChange={(event) => setNewPasscode(event.target.value)}
+                    />
+                    <button className={styles.headerPrimaryButton} type="button" onClick={handleSetPasscode} disabled={shareBusy}>
+                      Save
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+            {shareError && <div className={styles.shareError}>{shareError}</div>}
+            <div className={styles.shareActions}>
+              <button className={styles.secondaryButton} type="button" onClick={() => setShareModalOpen(false)}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <header className={styles.header}>
         <div className={styles.headerLeft}>
           <button className={styles.secondaryButton} onClick={handleBack}>
@@ -1124,7 +1175,7 @@ export default function DocumentEditor({ docId }: { docId: string }) {
               </button>
               {shareInfo.isShared && (
                 <button className={`${styles.headerActionButton} ${styles.hideOnTablet}`} type="button" title="Share settings">
-                  {shareInfo.lockEnabled ? "Locked" : "Open"}{shareInfo.oneTimeView ? " • 1-Time" : ""}
+                  {shareInfo.lockEnabled ? "Locked" : "Open"}
                 </button>
               )}
               <button className={styles.headerActionButton} type="button" onClick={() => void persist(title, contentHtml)} title="Save now">
