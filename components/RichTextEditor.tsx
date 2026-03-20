@@ -6,6 +6,7 @@ import styles from './RichTextEditor.module.css';
 export type RichTextCommand =
   | { type: 'bold' }
   | { type: 'italic' }
+  | { type: 'underline' }
   | { type: 'ul' }
   | { type: 'ol' }
   | { type: 'h1' }
@@ -16,7 +17,8 @@ export type RichTextCommand =
   | { type: 'clear' }
   | { type: 'textColor'; value: string }
   | { type: 'highlightColor'; value: string }
-  | { type: 'fontFamily'; value: string };
+  | { type: 'fontFamily'; value: string }
+  | { type: 'table'; rows?: number; cols?: number; header?: boolean };
 
 const runCommand = (command: RichTextCommand) => {
   if (typeof document === 'undefined') return;
@@ -52,6 +54,9 @@ const runCommand = (command: RichTextCommand) => {
     case 'italic':
       document.execCommand('italic');
       break;
+    case 'underline':
+      document.execCommand('underline');
+      break;
     case 'ul':
       document.execCommand('insertUnorderedList');
       break;
@@ -84,6 +89,32 @@ const runCommand = (command: RichTextCommand) => {
       break;
     case 'fontFamily':
       applyInlineStyle('font-family', command.value);
+      break;
+    case 'table':
+      {
+        const rows = Math.max(1, Math.min(20, Number(command.rows ?? 3)));
+        const cols = Math.max(1, Math.min(10, Number(command.cols ?? 3)));
+        const withHeader = command.header !== false;
+        const headerHtml = withHeader
+          ? `<thead><tr>${Array.from({ length: cols })
+              .map((_, i) => `<th>Header ${i + 1}</th>`)
+              .join('')}</tr></thead>`
+          : '';
+        const bodyRows = Array.from({ length: rows })
+          .map(
+            (_, r) =>
+              `<tr>${Array.from({ length: cols })
+                .map((c, i) => `<td>${r === 0 ? `Cell ${i + 1}` : ''}</td>`)
+                .join('')}</tr>`,
+          )
+          .join('');
+
+        document.execCommand(
+          'insertHTML',
+          false,
+          `<table>${headerHtml}<tbody>${bodyRows}</tbody></table><div><br></div>`,
+        );
+      }
       break;
   }
 };

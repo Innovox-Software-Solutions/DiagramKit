@@ -5,16 +5,18 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { signIn, useSession } from "next-auth/react";
 import { UserMenu } from "@/components/UserMenu";
 import RichTextEditor, { type RichTextCommand } from "@/components/RichTextEditor";
-import { Bold, Italic, List, ListOrdered, Heading1, Heading2, SeparatorHorizontal, Eraser, Download } from "lucide-react";
+import { Bold, Italic, Underline, List, ListOrdered, Heading1, Heading2, SeparatorHorizontal, Eraser, Download, Table2 } from "lucide-react";
 import styles from "../documents.module.css";
 
 const FONT_OPTIONS = [
   { label: "Inter", value: "var(--font-inter), Inter, sans-serif" },
+  { label: "Geist Sans", value: "var(--font-geist-sans), sans-serif" },
   { label: "Manrope", value: "var(--font-manrope), Manrope, sans-serif" },
   { label: "Space Grotesk", value: "var(--font-space-grotesk), sans-serif" },
   { label: "Roboto", value: "var(--font-roboto), Roboto, sans-serif" },
   { label: "Open Sans", value: "var(--font-open-sans), 'Open Sans', sans-serif" },
   { label: "Lobster Two", value: "var(--font-lobster-two), serif" },
+  { label: "Geist Mono", value: "var(--font-geist-mono), ui-monospace, monospace" },
 ]
 
 type LoadedDocument = {
@@ -84,6 +86,13 @@ export default function DocumentEditor({ docId }: { docId: string }) {
   const [fontFamily, setFontFamily] = useState(FONT_OPTIONS[0].value);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [guestMode, setGuestMode] = useState(false);
+  const [selectionUi, setSelectionUi] = useState<{ visible: boolean; x: number; y: number }>({ visible: false, x: 0, y: 0 });
+  const [tableHoverUi, setTableHoverUi] = useState<{ visible: boolean; rightX: number; leftX: number; y: number }>({
+    visible: false,
+    rightX: 0,
+    leftX: 0,
+    y: 0,
+  });
 
   const saveTimer = useRef<number | null>(null);
   const editorApi = useRef<null | { run: (command: RichTextCommand) => void; focus: () => void }>(null);
@@ -321,8 +330,11 @@ export default function DocumentEditor({ docId }: { docId: string }) {
       const titleText = title.trim().length > 0 ? title.trim() : "Untitled Document"
       const wrapper = document.createElement("div")
       wrapper.style.position = "fixed"
-      wrapper.style.left = "-100000px"
+      wrapper.style.left = "0"
       wrapper.style.top = "0"
+      wrapper.style.zIndex = "-1"
+      wrapper.style.opacity = "0"
+      wrapper.style.pointerEvents = "none"
       wrapper.style.width = "840px"
       wrapper.style.background = "#ffffff"
       wrapper.style.color = "#0f172a"
@@ -355,42 +367,71 @@ export default function DocumentEditor({ docId }: { docId: string }) {
       `
 
       document.body.appendChild(wrapper)
-      let canvas: HTMLCanvasElement
       try {
-        canvas = await html2canvas(wrapper, {
+        const filenameBase = titleText
+          .replace(/[\\/:*?"<>|]/g, "")
+          .replace(/\s+/g, " ")
+          .trim()
+
+        const canvas = await html2canvas(wrapper, {
           scale: 2,
           backgroundColor: "#ffffff",
           useCORS: true,
+          windowWidth: wrapper.scrollWidth,
+          windowHeight: wrapper.scrollHeight,
         })
+
+        const pdf = new jsPDF({ unit: "pt", format: "a4" })
+        const pageWidth = pdf.internal.pageSize.getWidth()
+        const pageHeight = pdf.internal.pageSize.getHeight()
+        const margin = 24
+        const renderWidthPt = pageWidth - margin * 2
+        const renderHeightPt = pageHeight - margin * 2
+
+        const pxPerPt = canvas.width / renderWidthPt
+        const sliceHeightPx = Math.max(1, Math.floor(renderHeightPt * pxPerPt))
+        const totalHeightPx = canvas.height
+
+        let offsetPx = 0
+        let pageIndex = 0
+
+        while (offsetPx < totalHeightPx) {
+          const currentSlicePx = Math.min(sliceHeightPx, totalHeightPx - offsetPx)
+          const sliceCanvas = document.createElement("canvas")
+          sliceCanvas.width = canvas.width
+          sliceCanvas.height = currentSlicePx
+          const ctx = sliceCanvas.getContext("2d")
+          if (!ctx) break
+          ctx.drawImage(
+            canvas,
+            0,
+            offsetPx,
+            canvas.width,
+            currentSlicePx,
+            0,
+            0,
+            sliceCanvas.width,
+            sliceCanvas.height,
+          )
+
+          const sliceData = sliceCanvas.toDataURL("image/png")
+          const sliceHeightPt = sliceCanvas.height / pxPerPt
+
+          if (pageIndex > 0) {
+            pdf.addPage()
+          }
+          pdf.addImage(sliceData, "PNG", margin, margin, renderWidthPt, sliceHeightPt, undefined, "FAST")
+
+          offsetPx += currentSlicePx
+          pageIndex += 1
+        }
+
+        pdf.save(`${filenameBase || "document"}.pdf`)
       } finally {
         if (document.body.contains(wrapper)) {
           document.body.removeChild(wrapper)
         }
       }
-
-      const pdf = new jsPDF({ unit: "pt", format: "a4" })
-      const pageWidth = pdf.internal.pageSize.getWidth()
-      const pageHeight = pdf.internal.pageSize.getHeight()
-      const margin = 24
-      const renderWidth = pageWidth - margin * 2
-      const renderHeight = (canvas.height * renderWidth) / canvas.width
-      const pageContentHeight = pageHeight - margin * 2
-      const imageData = canvas.toDataURL("image/png")
-
-      let offsetY = 0
-      while (offsetY < renderHeight) {
-        pdf.addImage(imageData, "PNG", margin, margin - offsetY, renderWidth, renderHeight)
-        offsetY += pageContentHeight
-        if (offsetY < renderHeight) {
-          pdf.addPage()
-        }
-      }
-
-      const filenameBase = titleText
-        .replace(/[\\/:*?"<>|]/g, "")
-        .replace(/\s+/g, " ")
-        .trim()
-      pdf.save(`${filenameBase || "document"}.pdf`)
     } catch (error) {
       console.error("Failed to export PDF", error)
       alert("Unable to download PDF right now.")
@@ -400,6 +441,197 @@ export default function DocumentEditor({ docId }: { docId: string }) {
   const keepSelectionOnMouseDown: React.MouseEventHandler<HTMLElement> = (event) => {
     event.preventDefault()
   }
+
+  const getEditorElement = () => document.getElementsByClassName(styles.docEditor)[0] as HTMLElement | undefined
+
+  const getSelectionContext = () => {
+    const editorEl = getEditorElement()
+    const sel = window.getSelection()
+    if (!editorEl || !sel || sel.rangeCount === 0) return { editorEl, sel, anchorEl: null as HTMLElement | null }
+    const anchorNode = sel.anchorNode
+    const anchorEl =
+      anchorNode?.nodeType === Node.ELEMENT_NODE
+        ? (anchorNode as HTMLElement)
+        : (anchorNode?.parentElement ?? null)
+    return { editorEl, sel, anchorEl }
+  }
+
+  const syncEditorHtml = () => {
+    const editorEl = getEditorElement()
+    if (!editorEl) return
+    setContentHtml(editorEl.innerHTML)
+  }
+
+  const getActiveCell = (): HTMLTableCellElement | null => {
+    const { editorEl, anchorEl } = getSelectionContext()
+    if (!editorEl || !anchorEl || !editorEl.contains(anchorEl)) return null
+    const cell = anchorEl.closest("td,th")
+    return (cell as HTMLTableCellElement | null) ?? null
+  }
+
+  const getActiveTable = (): HTMLTableElement | null => {
+    const cell = getActiveCell()
+    if (cell) return cell.closest("table") as HTMLTableElement | null
+    const { editorEl, anchorEl } = getSelectionContext()
+    if (!editorEl || !anchorEl || !editorEl.contains(anchorEl)) return null
+    return (anchorEl.closest("table") as HTMLTableElement | null) ?? null
+  }
+
+  const addTableColumn = (table?: HTMLTableElement | null) => {
+    const t = table ?? getActiveTable()
+    if (!t) return
+    Array.from(t.rows).forEach((row, rowIndex) => {
+      if (row.parentElement?.tagName === "THEAD" || (rowIndex === 0 && !t.tHead)) {
+        row.insertCell(-1).outerHTML = "<th>Header</th>"
+      } else {
+        row.insertCell(-1).innerHTML = "&nbsp;"
+      }
+    })
+    syncEditorHtml()
+  }
+
+  const removeLastTableColumn = (table?: HTMLTableElement | null) => {
+    const t = table ?? getActiveTable()
+    if (!t) return
+    const cols = t.rows[0]?.cells.length ?? 0
+    if (cols <= 1) return
+    Array.from(t.rows).forEach((row) => {
+      row.deleteCell(row.cells.length - 1)
+    })
+    syncEditorHtml()
+  }
+
+  const resizeCell = (axis: "width" | "height", deltaPx: number) => {
+    const cell = getActiveCell()
+    if (!cell) return
+    const current = axis === "width" ? cell.getBoundingClientRect().width : cell.getBoundingClientRect().height
+    const next = Math.max(axis === "width" ? 72 : 30, Math.min(axis === "width" ? 520 : 260, current + deltaPx))
+    cell.style.setProperty(axis, `${Math.round(next)}px`)
+    const table = cell.closest("table")
+    if (table) {
+      table.style.tableLayout = "fixed"
+      table.style.width = table.style.width || "100%"
+    }
+    syncEditorHtml()
+  }
+
+  const getTableFromHoverUi = (): HTMLTableElement | null => {
+    const sel = window.getSelection()
+    const anchor =
+      sel?.anchorNode?.nodeType === Node.ELEMENT_NODE
+        ? (sel?.anchorNode as HTMLElement)
+        : (sel?.anchorNode?.parentElement ?? null)
+    if (anchor) {
+      const fromSel = anchor.closest("table")
+      if (fromSel) return fromSel as HTMLTableElement
+    }
+    const el = document.elementFromPoint(tableHoverUi.rightX - window.scrollX - 8, tableHoverUi.y - window.scrollY) as HTMLElement | null
+    return (el?.closest("table") as HTMLTableElement | null) ?? null
+  }
+
+  const showHoverForTable = (table: HTMLTableElement) => {
+    const rect = table.getBoundingClientRect()
+    setTableHoverUi({
+      visible: true,
+      rightX: rect.right + window.scrollX + 10,
+      leftX: rect.left + window.scrollX - 10,
+      y: rect.top + window.scrollY + 26,
+    })
+  }
+
+  const addTableColumnFromHover = () => {
+    const table = getTableFromHoverUi()
+    if (!table) return
+    addTableColumn(table)
+    showHoverForTable(table)
+  }
+
+  const removeTableColumnFromHover = () => {
+    const table = getTableFromHoverUi()
+    if (!table) return
+    removeLastTableColumn(table)
+    showHoverForTable(table)
+  }
+
+  const _deprecatedKeep = () => {
+    // keep function positions stable after simplification
+    return undefined
+  }
+
+  const oldAddTableColumn = () => {
+    const table = getActiveTable()
+    if (!table) return
+    Array.from(table.rows).forEach((row, rowIndex) => {
+      if (row.parentElement?.tagName === "THEAD" || (rowIndex === 0 && !table.tHead)) {
+        row.insertCell(-1).outerHTML = "<th>Header</th>"
+      } else {
+        row.insertCell(-1).innerHTML = "&nbsp;"
+      }
+    })
+    syncEditorHtml()
+  }
+
+  const oldRemoveTableColumn = () => _deprecatedKeep()
+
+  useEffect(() => {
+    const updateSelectionUi = () => {
+      const editorEl = getEditorElement()
+      if (!editorEl) {
+        setSelectionUi((prev) => (prev.visible ? { ...prev, visible: false } : prev))
+        return
+      }
+      const sel = window.getSelection()
+      if (!sel || sel.rangeCount === 0) {
+        setSelectionUi((prev) => (prev.visible ? { ...prev, visible: false } : prev))
+        return
+      }
+      const range = sel.getRangeAt(0)
+      const common = range.commonAncestorContainer
+      if (!editorEl.contains(common)) {
+        setSelectionUi((prev) => (prev.visible ? { ...prev, visible: false } : prev))
+        return
+      }
+      const rect = range.getBoundingClientRect()
+      if (!rect.width && !rect.height) {
+        setSelectionUi((prev) => (prev.visible ? { ...prev, visible: false } : prev))
+        return
+      }
+
+      if (sel.isCollapsed) {
+        setSelectionUi((prev) => (prev.visible ? { ...prev, visible: false } : prev))
+        return
+      }
+
+      setSelectionUi({
+        visible: true,
+        x: rect.left + rect.width / 2 + window.scrollX,
+        y: rect.top + window.scrollY - 10,
+      })
+    }
+
+    const updateTableHoverUi = (event: MouseEvent) => {
+      const editorEl = getEditorElement()
+      if (!editorEl) return
+      const target = event.target as HTMLElement | null
+      const table = target?.closest("table")
+      if (table && editorEl.contains(table)) {
+        showHoverForTable(table as HTMLTableElement)
+        return
+      }
+      setTableHoverUi((prev) => (prev.visible ? { ...prev, visible: false } : prev))
+    }
+
+    document.addEventListener("selectionchange", updateSelectionUi)
+    window.addEventListener("scroll", updateSelectionUi, true)
+    window.addEventListener("resize", updateSelectionUi)
+    document.addEventListener("mousemove", updateTableHoverUi)
+    return () => {
+      document.removeEventListener("selectionchange", updateSelectionUi)
+      window.removeEventListener("scroll", updateSelectionUi, true)
+      window.removeEventListener("resize", updateSelectionUi)
+      document.removeEventListener("mousemove", updateTableHoverUi)
+    }
+  }, [])
 
   if (!hasLoaded || status === "loading") {
     return <div className={`${styles.container} ${theme === "light" ? styles.containerLight : ""}`} />
@@ -483,6 +715,72 @@ export default function DocumentEditor({ docId }: { docId: string }) {
 
       <div className={styles.docCanvas}>
         <div className={styles.docPaper}>
+          {selectionUi.visible && (
+            <div
+              className={styles.selectionToolbar}
+              style={{ left: selectionUi.x, top: selectionUi.y }}
+              role="toolbar"
+              aria-label="Selection actions"
+            >
+              <button className={styles.selectionButton} onMouseDown={keepSelectionOnMouseDown} onClick={() => editorApi.current?.run({ type: "bold" })} title="Bold">
+                <Bold size={14} />
+              </button>
+              <button className={styles.selectionButton} onMouseDown={keepSelectionOnMouseDown} onClick={() => editorApi.current?.run({ type: "italic" })} title="Italic">
+                <Italic size={14} />
+              </button>
+              <button className={styles.selectionButton} onMouseDown={keepSelectionOnMouseDown} onClick={() => editorApi.current?.run({ type: "underline" })} title="Underline">
+                <Underline size={14} />
+              </button>
+              <label className={styles.selectionColorLabel}>
+                <input
+                  className={styles.selectionColor}
+                  type="color"
+                  value={textColor}
+                  onChange={(event) => {
+                    const value = event.target.value
+                    setTextColor(value)
+                    editorApi.current?.run({ type: "textColor", value })
+                  }}
+                  title="Text color"
+                />
+              </label>
+              <label className={styles.selectionColorLabel}>
+                <input
+                  className={styles.selectionColor}
+                  type="color"
+                  value={highlightColor}
+                  onChange={(event) => {
+                    const value = event.target.value
+                    setHighlightColor(value)
+                    editorApi.current?.run({ type: "highlightColor", value })
+                  }}
+                  title="Highlight color"
+                />
+              </label>
+            </div>
+          )}
+          {tableHoverUi.visible && (
+            <>
+              <button
+                className={styles.tableHoverAdd}
+                style={{ left: tableHoverUi.rightX, top: tableHoverUi.y }}
+                onMouseDown={keepSelectionOnMouseDown}
+                onClick={addTableColumnFromHover}
+                title="Add column on right"
+              >
+                +
+              </button>
+              <button
+                className={styles.tableHoverRemove}
+                style={{ left: tableHoverUi.leftX, top: tableHoverUi.y }}
+                onMouseDown={keepSelectionOnMouseDown}
+                onClick={removeTableColumnFromHover}
+                title="Remove last column"
+              >
+                -
+              </button>
+            </>
+          )}
           <div className={styles.docTitle}>{title.trim().length ? title : "Untitled Document"}</div>
           <div className={styles.docHint}>Type your notes here — use the toolbar for formatting.</div>
 
@@ -507,6 +805,9 @@ export default function DocumentEditor({ docId }: { docId: string }) {
         <button className={styles.bottomButton} onMouseDown={keepSelectionOnMouseDown} onClick={() => editorApi.current?.run({ type: "italic" })} title="Italic (Ctrl+I)">
           <Italic size={16} />
         </button>
+        <button className={styles.bottomButton} onMouseDown={keepSelectionOnMouseDown} onClick={() => editorApi.current?.run({ type: "underline" })} title="Underline (Ctrl+U)">
+          <Underline size={16} />
+        </button>
         <div className={styles.bottomDivider} />
         <button className={styles.bottomButton} onMouseDown={keepSelectionOnMouseDown} onClick={() => editorApi.current?.run({ type: "h1" })} title="Heading 1">
           <Heading1 size={16} />
@@ -523,6 +824,16 @@ export default function DocumentEditor({ docId }: { docId: string }) {
         </button>
         <button className={styles.bottomButton} onMouseDown={keepSelectionOnMouseDown} onClick={() => editorApi.current?.run({ type: "divider" })} title="Divider">
           <SeparatorHorizontal size={16} />
+        </button>
+        <button
+          className={styles.bottomButton}
+          onMouseDown={keepSelectionOnMouseDown}
+          onClick={() => {
+            editorApi.current?.run({ type: "table", rows: 3, cols: 3, header: true })
+          }}
+          title="Insert table"
+        >
+          <Table2 size={16} />
         </button>
         <div className={styles.bottomDivider} />
         <label className={styles.bottomLabel}>
