@@ -38,6 +38,7 @@ export default function BothWorkspace() {
 
   return (
     <div className={`${styles.root} ${theme === 'light' ? styles.rootLight : ''}`}>
+      <h1 className="sr-only">DiagramKit: Collaborative Diagramming Tool & Online Whiteboard</h1>
       <DocumentsPanel
         width={PANEL_WIDTH}
         topOffset={TOPBAR_HEIGHT}

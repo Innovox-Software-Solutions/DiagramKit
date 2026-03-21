@@ -46,8 +46,43 @@ const spaceGrotesk = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "DiagramKit - Collaborative Whiteboard",
-  description: "Create and share diagrams with ease",
+  title: "DiagramKit | Collaborative Diagramming Tool & Online Whiteboard",
+  description: "Create, collaborate, and share diagrams in real-time. The ultimate interactive visual workspace for system design, flowcharts, and team brainstorming.",
+  keywords: [
+    "Collaborative Diagramming Tool",
+    "Online Whiteboard",
+    "Real-time Diagramming",
+    "System Design Tool",
+    "Flowchart Maker",
+    "DiagramKit",
+    "Visual Collaboration",
+    "Next.js whiteboard",
+    "Interactive Visual Workspace",
+    "Online wireframing"
+  ],
+  authors: [{ name: "Innovox Software Solutions" }],
+  openGraph: {
+    title: "DiagramKit | Collaborative Diagramming Tool",
+    description: "Empower your team with real-time visual collaboration for system design and brainstorming.",
+    url: "https://diagramkit.com",
+    siteName: "DiagramKit",
+    images: [
+      {
+        url: "/logo.png",
+        width: 800,
+        height: 600,
+        alt: "DiagramKit Logo",
+      },
+    ],
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "DiagramKit | Collaborative Diagramming Tool",
+    description: "The fast, collaborative way to create diagrams together.",
+    images: ["/logo.png"],
+  },
   icons: {
     icon: [{ url: "/logo.png", type: "image/png" }],
     shortcut: "/logo.png",
