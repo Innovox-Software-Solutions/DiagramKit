@@ -17,7 +17,7 @@ export const UserMenu: React.FC = () => {
         return (
             <button className={styles.signInButton} onClick={() => signIn('google')}>
                 <LogIn size={18} />
-                Sign In
+                <span className={styles.signInText}>Sign In</span>
             </button>
         );
     }

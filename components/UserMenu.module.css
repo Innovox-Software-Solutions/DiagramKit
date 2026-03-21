@@ -111,3 +111,11 @@
         height: 36px;
     }
 }
+@media (max-width: 480px) {
+    .signInText {
+        display: none;
+    }
+    .signInButton {
+        padding: 8px;
+    }
+}

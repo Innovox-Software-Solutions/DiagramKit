@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ZoomIn, ZoomOut, PanelLeftClose, PanelLeftOpen, Plus, Pencil, Check, X, Trash2, Copy } from 'lucide-react';
+import { ZoomIn, ZoomOut, PanelLeftClose, PanelLeftOpen, Plus, Pencil, Check, X, Trash2, Copy, Sun, Moon } from 'lucide-react';
 import { Toolbar } from './Toolbar';
 import { UserMenu } from './UserMenu';
 import { AuthModal } from './AuthModal';
@@ -139,6 +139,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
     const [renameInputValue, setRenameInputValue] = useState('');
     const [isTitleEditing, setIsTitleEditing] = useState(false);
     const [titleDraft, setTitleDraft] = useState('');
+    const [theme, setTheme] = useState<"light" | "dark">("light");
 
     const [selectedShapeIds, setSelectedShapeIds] = useState<string[]>([]);
     const [selectionBox, setSelectionBox] = useState<{ startX: number, startY: number, endX: number, endY: number } | null>(null);
@@ -253,6 +254,11 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
         setShapes(initialBoard.shapes);
         setHistory([initialBoard.shapes]);
         setHistoryIndex(0);
+
+        try {
+            const storedTheme = localStorage.getItem("diagramkit.docs.theme.v1");
+            if (storedTheme === "dark") setTheme("dark");
+        } catch (e) {}
     }, []);
 
     // Load boards from server when user signs in
@@ -2419,6 +2425,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
     const containerClassName = [
         styles.container,
         shouldShowStyleSidebar ? styles.withStyleSidebar : '',
+        theme === 'light' ? styles.containerLight : '',
     ].filter(Boolean).join(' ');
 
     const containerStyle = {
@@ -2487,6 +2494,19 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
                     </nav>
 
                     <div className={styles.topbarRight}>
+                        <button 
+                            className={styles.sidebarToggle} 
+                            style={{ position: 'relative', top: 0, left: 0, border: 'none', background: 'transparent', boxShadow: 'none', width: '32px', height: '32px', color: 'var(--app-topbar-text, #e5e7eb)' }} 
+                            onClick={() => {
+                                const newTheme = theme === "dark" ? "light" : "dark";
+                                setTheme(newTheme);
+                                try { localStorage.setItem("diagramkit.docs.theme.v1", newTheme); } catch (e) {}
+                                window.dispatchEvent(new Event("storage"));
+                            }} 
+                            title={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
+                        >
+                            {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+                        </button>
                         <UserMenu />
                     </div>
                 </header>
@@ -2547,10 +2567,13 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
             {isSidebarOpen && (
                 <aside className={styles.sidebar}>
                     <div className={styles.sidebarAppNav}>
-                        <Link href="/canvas" className={`${styles.sidebarAppLink} ${styles.sidebarAppLinkActive}`}>
+                        <Link href="/canvas" className={`${styles.sidebarAppLink} ${isCanvasActive ? styles.sidebarAppLinkActive : ''}`}>
                             Canvas
                         </Link>
-                        <Link href="/documents" className={styles.sidebarAppLink}>
+                        <Link href="/both" className={`${styles.sidebarAppLink} ${isBothActive ? styles.sidebarAppLinkActive : ''}`}>
+                            Both
+                        </Link>
+                        <Link href="/documents" className={`${styles.sidebarAppLink} ${isDocumentsActive ? styles.sidebarAppLinkActive : ''}`}>
                             Documents
                         </Link>
                     </div>

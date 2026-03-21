@@ -11,6 +11,7 @@ const TOPBAR_HEIGHT = 56;
 export default function BothWorkspace() {
   const [isNarrow, setIsNarrow] = useState(false);
   const [showDocs, setShowDocs] = useState(false);
+  const [theme, setTheme] = useState<"light" | "dark">("light");
 
   useEffect(() => {
     const media = window.matchMedia('(max-width: 900px)');
@@ -20,10 +21,23 @@ export default function BothWorkspace() {
     return () => media.removeEventListener('change', sync);
   }, []);
 
+  useEffect(() => {
+    const handleStorage = () => {
+      try {
+        const storedTheme = localStorage.getItem("diagramkit.docs.theme.v1");
+        if (storedTheme === "dark") setTheme("dark");
+        else setTheme("light");
+      } catch (e) {}
+    };
+    handleStorage();
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
+
   const workspaceLeftOffset = isNarrow ? 0 : PANEL_WIDTH;
 
   return (
-    <div className={styles.root}>
+    <div className={`${styles.root} ${theme === 'light' ? styles.rootLight : ''}`}>
       <DocumentsPanel
         width={PANEL_WIDTH}
         topOffset={TOPBAR_HEIGHT}

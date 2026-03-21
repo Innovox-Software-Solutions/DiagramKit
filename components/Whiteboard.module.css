@@ -21,6 +21,18 @@
     padding-left: var(--workspace-left-offset);
 }
 
+.containerLight {
+    --app-topbar-bg: rgba(248, 250, 252, 0.96);
+    --app-topbar-text: #0f172a;
+    --app-topbar-border: rgba(100, 116, 139, 0.28);
+    --menu-button-bg: #f1f5f9;
+    --menu-button-border: rgba(148, 163, 184, 0.28);
+    --menu-button-fg: #1e293b;
+    --menu-button-bg-hover: #e2e8f0;
+    --menu-button-border-hover: rgba(148, 163, 184, 0.45);
+    background-color: #f1f5f9;
+}
+
 .withBoardsSidebar {
     --toolbar-left-reserve: calc(var(--workspace-left-offset) + var(--ui-gap) + var(--boards-sidebar-width) + 14px);
 }
@@ -369,10 +381,10 @@
     justify-content: space-between;
     gap: 12px;
     padding: 0 16px;
-    background: #0b1220;
-    color: #e5e7eb;
+    background: var(--app-topbar-bg, #0b1220);
+    color: var(--app-topbar-text, #e5e7eb);
     z-index: 125;
-    border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+    border-bottom: 1px solid var(--app-topbar-border, rgba(148, 163, 184, 0.18));
     --menu-button-bg: rgba(2, 6, 23, 0.35);
     --menu-button-border: rgba(148, 163, 184, 0.22);
     --menu-button-fg: #e5e7eb;
@@ -395,7 +407,7 @@
 .topbarTitleButton {
     border: none;
     background: transparent;
-    color: #f9fafb;
+    color: var(--app-topbar-text, #f9fafb);
     font-size: 14px;
     font-weight: 800;
     padding: 6px 8px;
@@ -434,7 +446,7 @@
 
 .modeTab {
     text-decoration: none;
-    color: #e5e7eb;
+    color: var(--app-topbar-text, #e5e7eb);
     font-size: 12px;
     font-weight: 800;
     padding: 7px 12px;
@@ -821,6 +833,27 @@
         --floating-top: max(56px, calc(env(safe-area-inset-top) + 48px));
         --boards-sidebar-width: clamp(280px, 42vw, 320px);
         --style-sidebar-width: clamp(260px, 38vw, 300px);
+    }
+
+    .modeTabs {
+        display: none;
+    }
+
+    .topbarLeft {
+        padding-left: 46px; /* Make room for the floating sidebar toggle */
+    }
+
+    .topbarRight {
+        flex: none;
+    }
+
+    .topbarTitleButton {
+        max-width: 110px;
+    }
+
+    .topbarTitleInput {
+        width: 100px;
+        min-width: 80px;
     }
 
     .sidebarToggle {
