@@ -100,6 +100,8 @@ export default function DocumentsHome() {
     let cancelled = false
 
     const run = async () => {
+      if (status === "loading") return
+
       if (status !== "authenticated" && !guestMode) {
         if (!cancelled) setDocuments([])
         setHasLoaded(true)

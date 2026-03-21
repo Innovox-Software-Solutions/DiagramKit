@@ -113,8 +113,15 @@
   --menu-dropdown-border: var(--border-soft);
   --menu-dropdown-fg: var(--doc-text);
   --menu-dropdown-muted: var(--text-secondary);
+}
+
+.header::before {
+  content: "";
+  position: absolute;
+  inset: 0;
   backdrop-filter: blur(8px);
-  overflow: hidden;
+  -webkit-backdrop-filter: blur(8px);
+  z-index: -1;
 }
 
 .headerLeft {
@@ -133,13 +140,6 @@
   flex: 1;
   justify-content: flex-end;
   min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
-}
-
-.headerRight::-webkit-scrollbar {
-  display: none;
 }
 
 .heading {
@@ -196,6 +196,7 @@
   align-items: center;
   justify-content: center;
   border: 1px solid transparent;
+  white-space: nowrap;
 }
 
 .primaryButton {
@@ -684,6 +685,32 @@
   background: var(--surface-soft-hover);
 }
 
+.bottomBarPrimary, .bottomBarSecondary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mobileMoreButton {
+  display: none;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-soft);
+  color: var(--doc-text);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+  min-width: 40px;
+  text-align: center;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.mobileMoreButton:hover {
+  background: var(--surface-soft-hover);
+}
+
 .bottomLabel {
   display: inline-flex;
   align-items: center;
@@ -884,6 +911,24 @@
   display: inline-flex;
 }
 
+.titleInput {
+  min-width: 160px;
+  width: min(520px, 55vw);
+  border: 1px solid var(--border-soft);
+  background: var(--surface-soft);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text-primary);
+  outline: none;
+}
+
+.titleInput:focus {
+  border-color: var(--input-focus);
+  box-shadow: 0 0 0 3px var(--input-focus-shadow);
+}
+
 @media (max-width: 1280px) {
   .bottomBar {
     left: 10px;
@@ -919,7 +964,11 @@
   }
 
   .modeTabs {
-    display: none;
+    position: fixed;
+    bottom: calc(env(safe-area-inset-bottom) + 24px);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 100;
   }
 
   .bottomBar {
@@ -975,13 +1024,53 @@
     max-width: none;
     transform: none;
     bottom: calc(env(safe-area-inset-bottom) + 8px);
-    gap: 4px;
-    row-gap: 6px;
-    padding: 6px;
+    gap: 8px;
+    padding: 8px;
     border-radius: 14px;
-    flex-wrap: wrap;
-    justify-content: center;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
     overflow-x: visible;
+  }
+
+  .bottomBarPrimary {
+    justify-content: space-between;
+    width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .bottomBarPrimary::-webkit-scrollbar {
+    display: none;
+  }
+
+  .bottomBarSecondary {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 6px;
+    padding-top: 0;
+    margin-top: 0;
+    border-top: 1px solid transparent;
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .bottomBarSecondaryVisible {
+    max-height: 250px;
+    opacity: 1;
+    padding-top: 6px;
+    margin-top: 2px;
+    border-top-color: var(--border-soft);
+  }
+
+  .mobileMoreButton {
+    display: inline-flex;
+    padding: 8px 10px;
+    min-width: 36px;
+    font-size: 11px;
+    border-radius: 10px;
   }
 
   .bottomButton {
@@ -1068,17 +1157,15 @@
     width: min(360px, 44vw);
   }
 
-  .modeTabs {
-    display: none;
-  }
+
 
   .hideOnMobile {
     display: none;
   }
 
   .titleInput {
-    width: min(300px, 52vw);
-    min-width: 0;
+    width: 100%;
+    min-width: 60px;
   }
 }
 
@@ -1111,7 +1198,8 @@
   }
 
   .titleInput {
-    width: min(240px, 50vw);
+    width: 100%;
+    min-width: 40px;
     font-size: 12px;
     padding: 7px 8px;
   }
@@ -1123,20 +1211,4 @@
   }
 }
 
-.titleInput {
-  min-width: 160px;
-  width: min(520px, 55vw);
-  border: 1px solid var(--border-soft);
-  background: var(--surface-soft);
-  border-radius: 10px;
-  padding: 8px 10px;
-  font-size: 13px;
-  font-weight: 800;
-  color: var(--text-primary);
-  outline: none;
-}
 
-.titleInput:focus {
-  border-color: var(--input-focus);
-  box-shadow: 0 0 0 3px var(--input-focus-shadow);
-}

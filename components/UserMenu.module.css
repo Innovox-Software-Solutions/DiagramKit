@@ -15,6 +15,7 @@
     color: var(--menu-button-fg, #1f2937);
     cursor: pointer;
     transition: all 0.2s ease;
+    white-space: nowrap;
 }
 
 .signInButton:hover {

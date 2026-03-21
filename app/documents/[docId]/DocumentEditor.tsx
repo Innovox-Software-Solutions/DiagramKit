@@ -6,7 +6,7 @@ import { signIn, useSession } from "next-auth/react";
 import { compressToUTF16, decompressFromUTF16 } from "lz-string";
 import { UserMenu } from "@/components/UserMenu";
 import RichTextEditor, { type RichTextCommand } from "@/components/RichTextEditor";
-import { Bold, Italic, Underline, List, ListOrdered, Heading1, Heading2, SeparatorHorizontal, Eraser, Download, Table2 } from "lucide-react";
+import { Bold, Italic, Underline, List, ListOrdered, Heading1, Heading2, SeparatorHorizontal, Eraser, Download, Table2, ChevronUp, ChevronDown } from "lucide-react";
 import styles from "../documents.module.css";
 
 const FONT_OPTIONS = [
@@ -131,6 +131,7 @@ export default function DocumentEditor({ docId }: { docId: string }) {
   const [shareError, setShareError] = useState("")
   const [showPasscodeForm, setShowPasscodeForm] = useState(false)
   const [newPasscode, setNewPasscode] = useState("")
+  const [showMoreToolbar, setShowMoreToolbar] = useState(false)
 
   const saveTimer = useRef<number | null>(null);
   const editorApi = useRef<null | { run: (command: RichTextCommand) => void; focus: () => void }>(null);
@@ -198,6 +199,8 @@ export default function DocumentEditor({ docId }: { docId: string }) {
     let cancelled = false
 
     const run = async () => {
+      if (status === "loading") return
+
       if (status !== "authenticated" && !guestMode) {
         const existingGuestDoc = localStorage.getItem(docKey(docId))
         if (existingGuestDoc) {
@@ -322,16 +325,7 @@ export default function DocumentEditor({ docId }: { docId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docId, title, contentHtml]);
 
-  useEffect(() => {
-    if (saveTimer.current) {
-      window.clearTimeout(saveTimer.current)
-      saveTimer.current = null
-    }
-    setHasLoaded(false)
-    setSaveState("idle")
-    setTitle("Untitled Document")
-    setContentHtml("")
-  }, [docId])
+
 
   useEffect(() => {
     return () => {
@@ -1068,7 +1062,11 @@ export default function DocumentEditor({ docId }: { docId: string }) {
   }, [syncEditorHtml])
 
   if (!hasLoaded) {
-    return <div className={`${styles.container} ${theme === "light" ? styles.containerLight : ""}`} />
+    return (
+      <div className={`${styles.container} ${theme === "light" ? styles.containerLight : ""}`} style={{ color: "white", padding: "2rem" }}>
+        {status === "loading" ? "Checking session..." : "Loading document data..."}
+      </div>
+    )
   }
 
   if (!session?.user?.id && !guestMode) {
@@ -1345,82 +1343,91 @@ export default function DocumentEditor({ docId }: { docId: string }) {
       </div>
 
       <div className={styles.bottomBar} role="toolbar" aria-label="Document tools">
-        <button className={styles.bottomButton} onMouseDown={keepSelectionOnMouseDown} onClick={() => editorApi.current?.run({ type: "bold" })} title="Bold (Ctrl+B)">
-          <Bold size={16} />
-        </button>
-        <button className={styles.bottomButton} onMouseDown={keepSelectionOnMouseDown} onClick={() => editorApi.current?.run({ type: "italic" })} title="Italic (Ctrl+I)">
-          <Italic size={16} />
-        </button>
-        <button className={styles.bottomButton} onMouseDown={keepSelectionOnMouseDown} onClick={() => editorApi.current?.run({ type: "underline" })} title="Underline (Ctrl+U)">
-          <Underline size={16} />
-        </button>
-        <div className={styles.bottomDivider} />
-        <button className={styles.bottomButton} onMouseDown={keepSelectionOnMouseDown} onClick={() => editorApi.current?.run({ type: "h1" })} title="Heading 1">
-          <Heading1 size={16} />
-        </button>
-        <button className={styles.bottomButton} onMouseDown={keepSelectionOnMouseDown} onClick={() => editorApi.current?.run({ type: "h2" })} title="Heading 2">
-          <Heading2 size={16} />
-        </button>
-        <div className={styles.bottomDivider} />
-        <button className={styles.bottomButton} onMouseDown={keepSelectionOnMouseDown} onClick={() => editorApi.current?.run({ type: "ul" })} title="Bulleted list">
-          <List size={16} />
-        </button>
-        <button className={styles.bottomButton} onMouseDown={keepSelectionOnMouseDown} onClick={() => editorApi.current?.run({ type: "ol" })} title="Numbered list">
-          <ListOrdered size={16} />
-        </button>
-        <button className={styles.bottomButton} onMouseDown={keepSelectionOnMouseDown} onClick={() => editorApi.current?.run({ type: "divider" })} title="Divider">
-          <SeparatorHorizontal size={16} />
-        </button>
-        <button
-          className={styles.bottomButton}
-          onMouseDown={keepSelectionOnMouseDown}
-          onClick={() => {
-            const rowsRaw = window.prompt("How many rows?", "3")
-            if (rowsRaw === null) return
-            const colsRaw = window.prompt("How many columns?", "3")
-            if (colsRaw === null) return
-            const rows = Math.max(1, Math.min(20, Number(rowsRaw) || 3))
-            const cols = Math.max(1, Math.min(10, Number(colsRaw) || 3))
-            editorApi.current?.run({ type: "table", rows, cols, header: true })
-          }}
-          title="Insert table"
-        >
-          <Table2 size={16} />
-        </button>
-        <div className={styles.bottomDivider} />
-        <label className={styles.bottomLabel}>
-          Font
-          <select
-            className={styles.bottomSelect}
-            value={fontFamily}
-            onChange={(event) => {
-              const value = event.target.value
-              setFontFamily(value)
-              editorApi.current?.run({ type: "fontFamily", value })
+        <div className={styles.bottomBarPrimary}>
+          <button className={styles.bottomButton} onMouseDown={keepSelectionOnMouseDown} onClick={() => editorApi.current?.run({ type: "bold" })} title="Bold (Ctrl+B)">
+            <Bold size={16} />
+          </button>
+          <button className={styles.bottomButton} onMouseDown={keepSelectionOnMouseDown} onClick={() => editorApi.current?.run({ type: "italic" })} title="Italic (Ctrl+I)">
+            <Italic size={16} />
+          </button>
+          <button className={styles.bottomButton} onMouseDown={keepSelectionOnMouseDown} onClick={() => editorApi.current?.run({ type: "underline" })} title="Underline (Ctrl+U)">
+            <Underline size={16} />
+          </button>
+          <div className={styles.bottomDivider} />
+          <button className={styles.bottomButton} onMouseDown={keepSelectionOnMouseDown} onClick={() => editorApi.current?.run({ type: "h1" })} title="Heading 1">
+            <Heading1 size={16} />
+          </button>
+          <button className={styles.bottomButton} onMouseDown={keepSelectionOnMouseDown} onClick={() => editorApi.current?.run({ type: "h2" })} title="Heading 2">
+            <Heading2 size={16} />
+          </button>
+          <div className={styles.bottomDivider} />
+          <button className={styles.bottomButton} onMouseDown={keepSelectionOnMouseDown} onClick={() => editorApi.current?.run({ type: "ul" })} title="Bulleted list">
+            <List size={16} />
+          </button>
+          <button className={styles.mobileMoreButton} onMouseDown={keepSelectionOnMouseDown} onClick={() => setShowMoreToolbar(prev => !prev)} title="More Options">
+            {showMoreToolbar ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+          </button>
+        </div>
+
+        <div className={`${styles.bottomBarSecondary} ${showMoreToolbar ? styles.bottomBarSecondaryVisible : ""}`}>
+          <div className={styles.bottomDivider} />
+          <button className={styles.bottomButton} onMouseDown={keepSelectionOnMouseDown} onClick={() => editorApi.current?.run({ type: "ol" })} title="Numbered list">
+            <ListOrdered size={16} />
+          </button>
+          <button className={styles.bottomButton} onMouseDown={keepSelectionOnMouseDown} onClick={() => editorApi.current?.run({ type: "divider" })} title="Divider">
+            <SeparatorHorizontal size={16} />
+          </button>
+          <button
+            className={styles.bottomButton}
+            onMouseDown={keepSelectionOnMouseDown}
+            onClick={() => {
+              const rowsRaw = window.prompt("How many rows?", "3")
+              if (rowsRaw === null) return
+              const colsRaw = window.prompt("How many columns?", "3")
+              if (colsRaw === null) return
+              const rows = Math.max(1, Math.min(20, Number(rowsRaw) || 3))
+              const cols = Math.max(1, Math.min(10, Number(colsRaw) || 3))
+              editorApi.current?.run({ type: "table", rows, cols, header: true })
             }}
-            title="Font family"
+            title="Insert table"
           >
-            {FONT_OPTIONS.map((font) => (
-              <option key={font.value} value={font.value}>
-                {font.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className={styles.bottomSpacer} />
-        <button
-          className={styles.bottomButton}
-          onMouseDown={keepSelectionOnMouseDown}
-          onClick={handleDownloadPdf}
-          title="Download as PDF"
-          disabled={isExportingPdf}
-        >
-          <Download size={16} />
-          {isExportingPdf ? "Preparing..." : "PDF"}
-        </button>
-        <button className={styles.bottomButton} onMouseDown={keepSelectionOnMouseDown} onClick={() => editorApi.current?.run({ type: "clear" })} title="Clear formatting">
-          <Eraser size={16} />
-        </button>
+            <Table2 size={16} />
+          </button>
+          <div className={styles.bottomDivider} />
+          <label className={styles.bottomLabel}>
+            Font
+            <select
+              className={styles.bottomSelect}
+              value={fontFamily}
+              onChange={(event) => {
+                const value = event.target.value
+                setFontFamily(value)
+                editorApi.current?.run({ type: "fontFamily", value })
+              }}
+              title="Font family"
+            >
+              {FONT_OPTIONS.map((font) => (
+                <option key={font.value} value={font.value}>
+                  {font.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className={styles.bottomSpacer} />
+          <button
+            className={styles.bottomButton}
+            onMouseDown={keepSelectionOnMouseDown}
+            onClick={handleDownloadPdf}
+            title="Download as PDF"
+            disabled={isExportingPdf}
+          >
+            <Download size={16} />
+            {isExportingPdf ? "Preparing..." : "PDF"}
+          </button>
+          <button className={styles.bottomButton} onMouseDown={keepSelectionOnMouseDown} onClick={() => editorApi.current?.run({ type: "clear" })} title="Clear formatting">
+            <Eraser size={16} />
+          </button>
+        </div>
       </div>
     </div>
   );
