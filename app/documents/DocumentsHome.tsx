@@ -143,6 +143,10 @@ export default function DocumentsHome() {
     return [...documents].sort((a, b) => b.updatedAt - a.updatedAt)
   }, [documents]);
 
+  const openDocument = (id: string) => {
+    router.push(`/documents/${encodeURIComponent(id)}`)
+  }
+
   const handleCreate = async () => {
     if (session?.user?.id) {
       const res = await fetch("/api/documents", {
@@ -155,7 +159,7 @@ export default function DocumentsHome() {
         alert(data.error ?? "Unable to create document")
         return
       }
-      router.push(`/documents/${data.id}`)
+      openDocument(data.id)
       return
     }
 
@@ -178,7 +182,7 @@ export default function DocumentsHome() {
         updatedAt: now,
       }),
     )
-    router.push(`/documents/${id}`)
+    openDocument(id)
   };
 
   const handleDelete = async (docId: string) => {
@@ -256,7 +260,7 @@ export default function DocumentsHome() {
         ) : (
           sortedDocuments.map((doc) => (
             <div key={doc.id} className={styles.item}>
-              <Link className={styles.itemLink} href={`/documents/${doc.id}`}>
+              <Link className={styles.itemLink} href={`/documents/${encodeURIComponent(doc.id)}`}>
                 <div className={styles.itemTitle}>{doc.title}</div>
                 <div className={styles.itemMeta}>Updated {new Date(doc.updatedAt).toLocaleString()}</div>
               </Link>
