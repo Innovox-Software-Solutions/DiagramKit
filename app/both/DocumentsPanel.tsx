@@ -93,6 +93,32 @@ export default function DocumentsPanel({
   const saveTimer = useRef<number | null>(null);
   const hasLoaded = useRef(false);
 
+  const [overlayHeight, setOverlayHeight] = useState<number | null>(null);
+  const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
+
+  const startDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    const el = event.currentTarget.closest('aside');
+    if (!el) return;
+    dragRef.current = { startY: event.clientY, startHeight: el.offsetHeight };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const onDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragRef.current) return;
+    const dy = event.clientY - dragRef.current.startY;
+    const newHeight = dragRef.current.startHeight - dy;
+    const minHeight = 160;
+    const maxHeight = typeof window !== 'undefined' ? window.innerHeight - 100 : 800;
+    setOverlayHeight(Math.max(minHeight, Math.min(maxHeight, newHeight)));
+  };
+
+  const stopDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (dragRef.current) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+      dragRef.current = null;
+    }
+  };
+
   useEffect(() => {
     const list = safeParseList(localStorage.getItem(LIST_KEY));
     const storedActive = localStorage.getItem(ACTIVE_KEY) ?? '';
@@ -190,8 +216,24 @@ export default function DocumentsPanel({
   return (
     <aside
       className={`${styles.docsPanel} ${variant === 'overlay' ? styles.docsPanelOverlay : ''}`}
-      style={{ width: variant === 'side' ? width : undefined, top: variant === 'side' ? topOffset : undefined }}
+      style={{
+        width: variant === 'side' ? width : undefined,
+        top: variant === 'side' ? topOffset : undefined,
+        height: variant === 'overlay' && overlayHeight !== null ? `${overlayHeight}px` : undefined,
+        transition: dragRef.current ? 'none' : 'height 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
+      }}
     >
+      {variant === 'overlay' && (
+        <div
+          className={styles.dragHandleArea}
+          onPointerDown={startDrag}
+          onPointerMove={onDrag}
+          onPointerUp={stopDrag}
+          onPointerCancel={stopDrag}
+        >
+          <div className={styles.dragHandleBar} />
+        </div>
+      )}
       <div className={styles.docsHeader}>
         <select
           className={styles.docsSelect}
