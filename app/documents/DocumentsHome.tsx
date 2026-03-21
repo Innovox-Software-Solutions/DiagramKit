@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import React, { useMemo, useState } from "react";
 import { signIn, useSession } from "next-auth/react";
+import { Sun, Moon } from "lucide-react";
 import { compressToUTF16 } from "lz-string";
 import { UserMenu } from "@/components/UserMenu";
 import styles from "./documents.module.css";
@@ -67,7 +68,7 @@ export default function DocumentsHome() {
   const { data: session, status } = useSession();
   const [documents, setDocuments] = React.useState<DocumentRecord[]>([]);
   const [hasLoaded, setHasLoaded] = useState(false);
-  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [theme, setTheme] = useState<"dark" | "light">("light");
   const [guestMode, setGuestMode] = useState(true);
 
   React.useEffect(() => {
@@ -236,8 +237,8 @@ export default function DocumentsHome() {
         </nav>
 
         <div className={styles.headerRight}>
-          <button className={`${styles.headerActionButton} ${styles.hideOnMobile}`} onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}>
-            {theme === "dark" ? "Light Mode" : "Dark Mode"}
+          <button className={styles.headerActionButton} onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))} aria-label="Toggle Theme" title={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}>
+            {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
           </button>
           <button className={styles.primaryButton} onClick={handleCreate}>
             New Document
@@ -248,8 +249,9 @@ export default function DocumentsHome() {
 
       <div className={styles.list}>
         {status === "loading" || !hasLoaded ? (
-          <div className={styles.emptyState}>
-            <div className={styles.emptyTitle}>Loading…</div>
+          <div className={styles.loadingContainer} style={{ minHeight: "60vh" }}>
+            <div className={styles.loadingSpinner} />
+            <div className={styles.loadingText}>Loading…</div>
           </div>
         ) : sortedDocuments.length === 0 ? (
           <div className={styles.emptyState}>

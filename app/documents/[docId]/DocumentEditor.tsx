@@ -6,7 +6,7 @@ import { signIn, useSession } from "next-auth/react";
 import { compressToUTF16, decompressFromUTF16 } from "lz-string";
 import { UserMenu } from "@/components/UserMenu";
 import RichTextEditor, { type RichTextCommand } from "@/components/RichTextEditor";
-import { Bold, Italic, Underline, List, ListOrdered, Heading1, Heading2, SeparatorHorizontal, Eraser, Download, Table2, ChevronUp, ChevronDown } from "lucide-react";
+import { Bold, Italic, Underline, List, ListOrdered, Heading1, Heading2, SeparatorHorizontal, Eraser, Download, Table2, ChevronUp, ChevronDown, Sun, Moon } from "lucide-react";
 import styles from "../documents.module.css";
 
 const FONT_OPTIONS = [
@@ -114,7 +114,7 @@ export default function DocumentEditor({ docId }: { docId: string }) {
   const [textColor, setTextColor] = useState("#f8fafc");
   const [highlightColor, setHighlightColor] = useState("#fef08a");
   const [fontFamily, setFontFamily] = useState(FONT_OPTIONS[0].value);
-  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [theme, setTheme] = useState<"dark" | "light">("light");
   const [guestMode, setGuestMode] = useState(true);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [selectionUi, setSelectionUi] = useState<{ visible: boolean; x: number; y: number }>({ visible: false, x: 0, y: 0 });
@@ -1063,8 +1063,13 @@ export default function DocumentEditor({ docId }: { docId: string }) {
 
   if (!hasLoaded) {
     return (
-      <div className={`${styles.container} ${theme === "light" ? styles.containerLight : ""}`} style={{ color: "white", padding: "2rem" }}>
-        {status === "loading" ? "Checking session..." : "Loading document data..."}
+      <div className={`${styles.container} ${theme === "light" ? styles.containerLight : ""}`}>
+        <div className={styles.loadingContainer}>
+          <div className={styles.loadingSpinner} />
+          <div className={styles.loadingText}>
+            {status === "loading" ? "Checking session..." : "Loading document data..."}
+          </div>
+        </div>
       </div>
     )
   }
@@ -1175,8 +1180,8 @@ export default function DocumentEditor({ docId }: { docId: string }) {
         </div>
 
         <div className={styles.headerRight}>
-          <button className={`${styles.headerActionButton} ${styles.hideOnMobile}`} onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}>
-            {theme === "dark" ? "Light Mode" : "Dark Mode"}
+          <button className={styles.headerActionButton} onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))} title={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}>
+            {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
           </button>
           {session?.user?.id ? (
             <>
@@ -1195,7 +1200,7 @@ export default function DocumentEditor({ docId }: { docId: string }) {
                   {shareInfo.lockEnabled ? "Locked" : "Open"}
                 </button>
               )}
-              <button className={styles.headerActionButton} type="button" onClick={() => void persist(title, contentHtml)} title="Save now">
+              <button className={`${styles.headerActionButton} ${styles.hideOnMobile}`} type="button" onClick={() => void persist(title, contentHtml)} title="Save now">
                 Save
               </button>
               <button className={styles.headerPrimaryButton} type="button" onClick={handleShare} title="Create view-only link">
